@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { BRANDS, PRODUCTS, STORE_NAMES } from '../data/catalog.js';
+import { PRODUCTS, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { colorList, colorStr } from '../lib/search.js';
+import { categoryLabel, colorList, colorStr } from '../lib/search.js';
 import { BrandPicker, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
@@ -29,7 +29,7 @@ function resolve(pending, ans, custom, skip) {
     if (k === 'size') { const v = cu ? cu.toUpperCase() : a; if (v) c.size = v; }
     if (k === 'brand') {
       c.brands = cu
-        ? cu.split(',').map((x) => x.trim()).filter(Boolean).map((x) => BRANDS.find((b) => b.toLowerCase() === x.toLowerCase()) || x)
+        ? cu.split(',').map((x) => x.trim()).filter(Boolean).map((x) => allBrands().find((b) => b.toLowerCase() === x.toLowerCase()) || x)
         : (a || []).filter((x) => x !== ANY_BRAND);
     }
     if (k === 'color') {
@@ -57,7 +57,7 @@ export function Clarify() {
 
   const { ds, crit: c, missing } = pending;
   const Q = questionsFor(ds);
-  const known = [{ k: 'Категория', v: ds === 'shoes' ? 'обувь' : 'одежда' }];
+  const known = [{ k: 'Категория', v: categoryLabel(ds) }];
   if (c.color) known.push({ k: colorList(c.color).length > 1 ? 'Цвета' : 'Цвет', v: colorStr(c.color) });
   if (c.budget) known.push({ k: 'Бюджет', v: 'до ' + rub(c.budget) });
   if (c.size) known.push({ k: 'Размер', v: c.size });
@@ -71,7 +71,7 @@ export function Clarify() {
 
   const apply = (skip) => {
     const { crit, stores } = resolve(pending, ans, custom, skip);
-    if (!stores.length || !crit.size) { setTried(true); return; }
+    if (!stores.length || (!crit.size && ds !== 'acc')) { setTried(true); return; }
     app.setPref('selStores', stores.slice());
     app.runSearch({ q: pending.q, ds, stores, crit });
   };
@@ -115,7 +115,7 @@ export function Clarify() {
               </div>
               {k === 'brand' ? (
                 <div className="question-opts">
-                  <BrandPicker wide brands={BRANDS} selected={qBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
+                  <BrandPicker wide brands={allBrands()} selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
                     label={qBrands.length ? (qBrands.length <= 2 ? qBrands.join(', ') : qBrands[0] + ' +' + (qBrands.length - 1)) : ''}
                     meta={inResults}
                     onToggle={(b) => setAns((st) => ({ ...st, brand: toggle((st.brand || []).filter((x) => x !== ANY_BRAND), b) }))}

@@ -35,6 +35,12 @@ describe('parseQuery', () => {
     expect(parseQuery('мокасины 38').ds).toBe('shoes');
     expect(parseQuery('сапоги').ds).toBe('shoes');
   });
+  it('сумки и другие аксессуары — без размера', () => {
+    expect(parseQuery('черная кожаная сумка через плечо').ds).toBe('acc');
+    expect(parseQuery('рюкзак до 20 000').ds).toBe('acc');
+    expect(missingCriteria({ brands: [], size: null, color: ['чёрный'], budget: 1 }, 'acc')).toEqual(['brand']);
+    expect(missingCriteria({ brands: [], size: null, color: ['чёрный'], budget: 1 }, 'shoes')).toEqual(['size', 'brand']);
+  });
   it('берёт тип из категорий, если в запросе его нет', () => {
     expect(parseQuery('что-нибудь белое', ['Обувь']).ds).toBe('shoes');
     expect(parseQuery('что-нибудь белое', ['Одежда']).ds).toBe('trench');
@@ -180,5 +186,17 @@ describe('размеры', () => {
   it('размеры известны, но нужного нет — товар отсеивается', () => {
     const it = liveItem({ id: 'x', store: 'Stockmann', url: 'u', title: 'Тренч', price: 10000, sizes: ['XS', 'S'], sizesOut: ['M'] });
     expect(getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match').base.length).toBe(0);
+  });
+});
+
+describe('без размера', () => {
+  it('«без размера» и OneSize подходят под любой размер', async () => {
+    const { sizeEq } = await import('../search.js');
+    expect(sizeEq('без размера', 'M')).toBe(true);
+    expect(sizeEq('OneSize', '40')).toBe(true);
+    const bag = liveItem({ id: 'x', store: 'Stockmann', url: 'u', title: 'Сумка', price: 10000, sizes: ['без размера'] });
+    const { base } = getResults([bag], { size: 'M', brands: [] }, emptyFilters(), 'match');
+    expect(base.length).toBe(1);
+    expect(base[0].m.reasons.find((r) => r.key === 'size')).toMatchObject({ s: 'ok', text: 'единый размер' });
   });
 });

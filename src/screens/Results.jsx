@@ -137,14 +137,19 @@ export function Results({ run }) {
   const loading = missing.length > 0;
 
   // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
-  const { setStoreResult, setLastRun } = app;
+  const { setStoreResult, setLastRun, learnBrands } = app;
   const missingKey = missing.join('|');
   useEffect(() => {
     if (!missingKey) return undefined;
     const ctrl = new AbortController();
     missingKey.split('|').forEach((name, i) => {
       searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); })
-        .then((res) => { if (!ctrl.signal.aborted) setStoreResult(key, name, res); })
+        .then((res) => {
+          if (ctrl.signal.aborted) return;
+          if (res.brands && res.brands.length) learnBrands(res.brands);
+          const { brands: _b, ...rest } = res;
+          setStoreResult(key, name, rest);
+        })
         .catch(() => { /* отменено */ });
     });
     return () => ctrl.abort();

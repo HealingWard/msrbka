@@ -91,12 +91,14 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const searchUrl = store.search + encodeURIComponent(queries[0]);
     if (!(await extensionVersion())) return { status: 'noext', items: [], error: NOEXT_ERROR, searchUrl };
     const byUrl = new Map();
+    const brands = new Set();
     const statuses = [];
     for (let i = 0; i < queries.length; i++) {
       try {
         const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i] });
         const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, limit: Math.floor(150 / queries.length) });
         statuses.push(r);
+        for (const b of r.brands || []) brands.add(b);
         for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
       } catch (e) {
         if (e.name === 'AbortError') throw e;
@@ -109,7 +111,7 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const first = statuses.find((r) => r.status !== 'ok') || statuses[0] || {};
     return {
       status: ok ? 'ok' : first.status || 'error', items, error: ok ? null : first.error || null,
-      searchUrl: statuses[0]?.searchUrl || searchUrl, queries,
+      searchUrl: statuses[0]?.searchUrl || searchUrl, queries, brands: [...brands],
     };
   }
   if (!isLive()) {

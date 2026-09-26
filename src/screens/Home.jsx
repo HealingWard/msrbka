@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BRANDS, CATS, STORES, STORE_NAMES } from '../data/catalog.js';
+import { CATS, STORES, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { STORES_F, countStr, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { missingCriteria, parseQuery } from '../lib/search.js';
@@ -48,8 +48,8 @@ export function Home() {
     if (!q) return;
     const p = parseQuery(q, cats);
     const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget };
-    let missing = missingCriteria(crit);
-    if (!prefs.askClarify) missing = crit.size ? [] : ['size'];
+    let missing = missingCriteria(crit, p.ds);
+    if (!prefs.askClarify) missing = crit.size || p.ds === 'acc' ? [] : ['size'];
     if (!selStores.length || missing.length) {
       // Вопрос о магазинах показываем всегда — с уже отмеченными вариантами.
       missing = ['store', ...missing];
@@ -71,7 +71,7 @@ export function Home() {
           placeholder="Например, бежевый тренч до 25 000" autoFocus />
         <div className="searchbox-bar">
           <StorePicker selected={selStores} onChange={(v) => setPref('selStores', v)} />
-          <BrandPicker brands={BRANDS} selected={selBrands} label={brandsLabel}
+          <BrandPicker brands={allBrands()} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
               <div className="dd-foot">

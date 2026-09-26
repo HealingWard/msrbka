@@ -1,4 +1,4 @@
-import { BRANDS, NEAR, STORE_NAMES } from '../data/catalog.js';
+import { NEAR, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { cap, rub } from './format.js';
 
 export const colorList = (c) => [].concat(c || []);
@@ -38,10 +38,15 @@ const brandRe = (b) => new RegExp('(^|[^a-zа-я0-9])' + escapeRe(norm(b)) + '(?
 /** Бренды из списка, упомянутые в тексте; «Esprit» отбрасывается, если нашёлся «Esprit Casual». */
 export function detectBrands(text) {
   const low = norm(text);
-  return BRANDS
+  return allBrands()
     .filter((b) => brandRe(b).test(low))
     .filter((b, _, arr) => !arr.some((o) => o !== b && o.toLowerCase().includes(b.toLowerCase())));
 }
+
+// Аксессуары: размер для них не нужен.
+const ACC_RE = /сумк|сумоч|рюкзак|клатч|шоппер|кошел|портмоне|бумажник|картхолдер|визитниц|косметичк|ремень|ремн|шарф|платок|платк|палантин|очки|часы|зонт|украшен|серьг|браслет|колье|кулон|подвеск|кольц|брошь|бижутер|перчатк|варежк|кепк|берет|панам|шапк|аксессуар|чехол|брелок/;
+
+export const categoryLabel = (ds) => (ds === 'shoes' ? 'обувь' : ds === 'acc' ? 'аксессуары' : 'одежда');
 
 export function parseQuery(q, cats = []) {
   const low = norm(q);
@@ -64,15 +69,17 @@ export function parseQuery(q, cats = []) {
 
   let ds = 'trench';
   if (/кед|кросс|обув|ботин|ботильон|туфл|лофер|мокасин|сапог|сандал|босонож|балетк|мюли|слипон|оксфорд|дерби|челси|сабо|шлепанц|шлёпанц|эспадриль|тапоч|угги/.test(low)) ds = 'shoes';
+  else if (ACC_RE.test(low)) ds = 'acc';
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.includes('Обувь') && !cats.includes('Одежда')) ds = 'shoes';
+  else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.length === 1 && cats[0] === 'Аксессуары') ds = 'acc';
 
   return { color: colors.length ? colors : null, size, budget, brands, ds };
 }
 
 /** Какие параметры нужно уточнить перед поиском. */
-export function missingCriteria(crit) {
+export function missingCriteria(crit, ds) {
   const m = [];
-  if (!crit.size) m.push('size');
+  if (!crit.size && ds !== 'acc') m.push('size');
   if (!crit.brands.length) m.push('brand');
   if (!crit.color) m.push('color');
   if (!crit.budget) m.push('budget');
@@ -99,7 +106,8 @@ export function matchProduct(p, c = {}) {
   r.size = c.size
     ? (!sizes.length && sizesOut.length ? { s: 'no', t: 'нет в наличии ни одного размера' }
       : !sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
-      : sizes.some((z) => sizeEq(z, c.size)) ? { s: 'ok', t: c.size + ' в наличии' }
+      : sizes.some((z) => sizeEq(z, c.size) && !isUniversalSize(z)) ? { s: 'ok', t: c.size + ' в наличии' }
+        : sizes.some(isUniversalSize) ? { s: 'ok', t: 'единый размер' }
         : sizes.some((z) => sizeNear(z, c.size)) ? { s: 'near', t: 'есть ' + sizes.filter((z) => sizeNear(z, c.size)).join(', ') + ' ≈ ' + c.size }
           : { s: 'no', t: 'нет ' + c.size + ', есть ' + sizes.join(', ') })
     : { s: 'any', t: 'не указан' };
@@ -157,12 +165,17 @@ export const baseProducts = (items, crit) =>
     return !known || (p.sizes || []).some((z) => sizeEq(z, crit.size) || sizeNear(z, crit.size));
   });
 
+// «Без размера», OneSize и т. п. подходят под любой запрошенный размер.
+const UNIVERSAL = /^(без размера|one ?size|onesize|ns|uni|единый|универсальн)/i;
+export const isUniversalSize = (z) => UNIVERSAL.test(String(z).trim());
+
 const normSize = (x) => String(x).toLowerCase().replace(/\s*(ru|rus|eu|it|fr|int)$/i, '').trim();
 /** «XS/42» → ['xs', '42']: у Lamoda размер указан сразу в двух системах. */
 const sizeTokens = (x) => String(x).split(/[/,()]/).map(normSize).filter(Boolean);
 
 /** Точное совпадение: «M» = «m», «38» = «38 RU», «XS/42» = «XS» и = «42». */
 export function sizeEq(a, b) {
+  if (isUniversalSize(a) || isUniversalSize(b)) return true;
   const tb = sizeTokens(b);
   return sizeTokens(a).some((t) => tb.includes(t));
 }
@@ -210,7 +223,7 @@ export function getResults(items, crit, filters, sort) {
 export function criteriaChips(c, stores, ds) {
   const brands = c.brands || [];
   const chips = [
-    { k: 'Категория', v: ds === 'shoes' ? 'обувь' : 'одежда' },
+    { k: 'Категория', v: categoryLabel(ds) },
     {
       k: brands.length > 1 ? 'Бренды' : 'Бренд',
       v: brands.length ? (brands.length > 2 ? brands.slice(0, 2).join(', ') + ' и ещё ' + (brands.length - 2) : brands.join(', ')) : 'любой',
@@ -248,7 +261,7 @@ export function runFromParams(sp) {
   const budget = +(sp.get('budget') || '').replace(/\D/g, '') || null;
   return {
     q,
-    ds: sp.get('ds') === 'shoes' ? 'shoes' : 'trench',
+    ds: ['shoes', 'acc'].includes(sp.get('ds')) ? sp.get('ds') : 'trench',
     stores,
     crit: { brands: list('brands'), size: sp.get('size') || null, color: color.length ? color : null, budget },
   };

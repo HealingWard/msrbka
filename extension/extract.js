@@ -327,6 +327,8 @@
       if (!Array.isArray(list)) return null;
       const pg = pp.category?.pagination || {};
       lastPage = { current: +pg.current || null, total: +pg.total || null, found: +pp.category?.productsCount || null };
+      const bf = (pp.category?.filters || []).find((f) => f && (f.id === 'BRAND' || f.type === 'brands'));
+      lastBrands = (bf?.values || []).map((v) => clean(v?.name || '')).filter(Boolean);
       return list.map(stockmannItem).filter((x) => x && x.url && x.price);
     }
     const it = pp.product ? stockmannItem(pp.product) : null;
@@ -389,6 +391,8 @@
       if (!Array.isArray(st.products)) return null;
       const pg = st.pagination || {};
       lastPage = { current: +pg.page || null, total: +pg.pages || null, found: +pg.found || null };
+      const bf = (st.facets || []).find((f) => f && f.name === 'brands');
+      lastBrands = (bf?.list_value?.values || []).map((v) => clean(v?.title || v?.formatted_title || '')).filter(Boolean);
       return st.products.map(lamodaItem).filter((x) => x && x.title && x.price);
     }
     const it = st.product ? lamodaItem(st.product) : null;
@@ -428,6 +432,7 @@
   }
 
   let lastPage = null; // { current, total, found } — пагинация выдачи магазина
+  let lastBrands = []; // бренды из фильтров магазина по этому запросу
 
   function storeExtract(mode) {
     const h = location.hostname.replace(/^www\./, '');
@@ -468,7 +473,7 @@
       }, opts.timeoutMs || 25000);
       if (ready && ready.blocked) return { blocked: ready.blocked, items: [], url: location.href, title: document.title };
       const exact = storeExtract('search');
-      if (exact && exact.length) return { blocked: null, items: await inlineImages(exact), page: lastPage, source: 'store', url: location.href, title: document.title };
+      if (exact && exact.length) return { blocked: null, items: await inlineImages(exact), page: lastPage, brands: lastBrands, source: 'store', url: location.href, title: document.title };
       await sleep(800); // даём догрузиться ценам и картинкам
       window.scrollTo(0, document.body.scrollHeight / 2);
       await sleep(400);
