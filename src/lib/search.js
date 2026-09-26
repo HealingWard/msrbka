@@ -46,6 +46,26 @@ export function detectBrands(text) {
 // Аксессуары: размер для них не нужен.
 const ACC_RE = /сумк|сумоч|рюкзак|клатч|шоппер|кошел|портмоне|бумажник|картхолдер|визитниц|косметичк|ремень|ремн|шарф|платок|платк|палантин|очки|часы|зонт|украшен|серьг|браслет|колье|кулон|подвеск|кольц|брошь|бижутер|перчатк|варежк|кепк|берет|панам|шапк|аксессуар|чехол|брелок/;
 
+// Товары для дома: размер одежды и «для кого» не нужны. Проверяем начало слов.
+const HOME_WORD = /^(постел|простын|пододеяльн|наволоч|полотенц|плед|покрывал|подушк|одеял|наматрасник|матрас|скатерт|салфетк|штор|занавес|тюл|ков[её]р|ковр|коврик|посуд|сервиз|тарелк|блюд[оа]|чашк|кружк|бокал|фужер|стакан|кастрюл|сковород|чайник|кофевар|кофемаш|турк|блендер|миксер|тостер|свеч|подсвечник|диффузор|аромадиффузор|ароматизатор|ваз[аыу]?$|интерьер|кухон|текстил|декор$|полотенцедержател|вешалк|корзин|органайзер|шкатулк|рамк|подставк|термос|графин|кувшин|солонк|ножи$|разделочн)/;
+const isHomeQuery = (low) => /для дома|для кухни|для ванн|для спальн/.test(low) || low.split(/[^a-zа-я0-9]+/).some((w) => HOME_WORD.test(w));
+
+/** Размер белья в тексте запроса: «евро», «2-спальный», «1,5 сп», «полуторное». */
+export const BED_SIZE = String.raw`(евро\s*-?\s*макси|евромакси|евро|семейн[а-я]*|двуспальн[а-я]*|односпальн[а-я]*|полуторн[а-я]*(?:\s*-?\s*спальн[а-я]*)?|(?:1[,.]5|2|1|двух)\s*-?\s*(?:х\s*)?(?:спальн[а-я]*|сп\.?))`;
+/** Размер постельного белья: «2-спальный», «евро», «семейный» → общий ключ; null — не размер белья. */
+export function bedKey(x) {
+  const t = String(x || '').toLowerCase().replace(/ё/g, 'е');
+  if (/евро\s*-?\s*макси|евромакси|king/.test(t)) return 'евромакси';
+  if (/евро/.test(t)) return 'евро';
+  if (/семейн|дуэт/.test(t)) return 'семейный';
+  if (/(1[,.]5|полутор)/.test(t) && /сп/.test(t)) return '1,5-спальный';
+  if (/(^|\D)2(\D|$)|двух|двусп|двуx/.test(t) && /сп/.test(t)) return '2-спальный';
+  if (/(^|\D)1(\D|$)|односп/.test(t) && /сп/.test(t)) return '1-спальный';
+  return null;
+}
+/** Нужен ли размер для категории: у аксессуаров и товаров для дома — нет. */
+export const sizeRequired = (ds) => ds !== 'acc' && ds !== 'home';
+
 // ——— Для кого ———
 export const GENDER_LABEL = { women: 'женщинам', men: 'мужчинам', girls: 'девочкам', boys: 'мальчикам', kids: 'детям' };
 /** Пол из текста запроса: «женские», «для мужчин», «для девочки»… */
@@ -63,7 +83,7 @@ const GENDER_OK = { women: ['women', 'unisex'], men: ['men', 'unisex'], kids: ['
 export const genderMismatch = (p, g) => !!g && !!p.gender && !(GENDER_OK[g] || [g]).includes(p.gender);
 const GENDER_ITEM = { women: 'женские', men: 'мужские', girls: 'для девочек', boys: 'для мальчиков', kids: 'детские', unisex: 'унисекс' };
 
-export const categoryLabel = (ds) => (ds === 'shoes' ? 'обувь' : ds === 'acc' ? 'аксессуары' : 'одежда');
+export const categoryLabel = (ds) => (ds === 'shoes' ? 'обувь' : ds === 'acc' ? 'аксессуары' : ds === 'home' ? 'товары для дома' : 'одежда');
 
 export function parseQuery(q, cats = []) {
   const low = norm(q);
@@ -85,10 +105,19 @@ export function parseQuery(q, cats = []) {
   const brands = detectBrands(q);
 
   let ds = 'trench';
-  if (/кед|кросс|обув|ботин|ботильон|туфл|лофер|мокасин|сапог|сандал|босонож|балетк|мюли|слипон|оксфорд|дерби|челси|сабо|шлепанц|шлёпанц|эспадриль|тапоч|угги/.test(low)) ds = 'shoes';
+  if (isHomeQuery(low)) ds = 'home';
+  else if (/кед|кросс|обув|ботин|ботильон|туфл|лофер|мокасин|сапог|сандал|босонож|балетк|мюли|слипон|оксфорд|дерби|челси|сабо|шлепанц|шлёпанц|эспадриль|тапоч|угги/.test(low)) ds = 'shoes';
   else if (ACC_RE.test(low)) ds = 'acc';
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.includes('Обувь') && !cats.includes('Одежда')) ds = 'shoes';
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.length === 1 && cats[0] === 'Аксессуары') ds = 'acc';
+  else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.length === 1 && cats[0] === 'Товары для дома') ds = 'home';
+
+  // Товары для дома: размер — только размер постельного белья, пол не учитываем.
+  if (ds === 'home') {
+    const bed = low.match(new RegExp(BED_SIZE + '(?=[^а-яa-z0-9]|$)'));
+    const key = bed ? bedKey(bed[0] + (/евро|семейн/.test(bed[0]) ? '' : ' сп')) : null;
+    return { color: colors.length ? colors : null, size: key, budget, brands, ds, gender: null };
+  }
 
   // Размер без слова «размер»: «лоферы 40», «платье 46» (не бюджет «до 40 000»).
   if (!size && ds !== 'acc') {
@@ -101,7 +130,7 @@ export function parseQuery(q, cats = []) {
 /** Какие параметры нужно уточнить перед поиском. */
 export function missingCriteria(crit, ds) {
   const m = [];
-  if (!crit.size && ds !== 'acc') m.push('size');
+  if (!crit.size && ds !== 'acc') m.push('size'); // для дома размер спрашиваем, но он необязателен
   if (!crit.brands.length) m.push('brand');
   if (!crit.color) m.push('color');
   if (!crit.budget) m.push('budget');
@@ -124,7 +153,9 @@ export function matchProduct(p, c = {}) {
     : { s: 'any', t: 'не важен' };
   const sizes = p.sizes || [];
   const sizesOut = p.sizesOut || [];
-  r.size = c.size
+  r.size = c.size && bedKey(c.size) && ![...sizes, ...sizesOut].some(bedKey)
+    ? (sizes.length ? { s: 'unk', t: 'размеры: ' + sizes.join(', ') + ' — сверьте с ' + c.size } : { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' })
+    : c.size
     ? (!sizes.length && sizesOut.length ? { s: 'no', t: 'нет в наличии ни одного размера' }
       : !sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
       : sizes.some((z) => sizeEq(z, c.size) && !isUniversalSize(z)) ? { s: 'ok', t: c.size + ' в наличии' }
@@ -182,7 +213,9 @@ export function matchProduct(p, c = {}) {
 export const baseProducts = (items, crit) =>
   items.filter((p) => {
     if (!crit.size) return true;
-    const known = (p.sizes && p.sizes.length) || (p.sizesOut && p.sizesOut.length);
+    // Размер белья («евро») проверяем, только если магазин назвал размеры так же, а не в сантиметрах.
+    const all = [...(p.sizes || []), ...(p.sizesOut || [])];
+    const known = bedKey(crit.size) ? all.some(bedKey) : all.length;
     return !known || (p.sizes || []).some((z) => sizeEq(z, crit.size) || sizeNear(z, crit.size));
   });
 
@@ -197,6 +230,8 @@ const sizeTokens = (x) => String(x).split(/[/,()]/).map(normSize).filter(Boolean
 /** Точное совпадение: «M» = «m», «38» = «38 RU», «XS/42» = «XS» и = «42». */
 export function sizeEq(a, b) {
   if (isUniversalSize(a) || isUniversalSize(b)) return true;
+  const ka = bedKey(a), kb = bedKey(b);
+  if (ka || kb) return ka === kb;
   const tb = sizeTokens(b);
   return sizeTokens(a).some((t) => tb.includes(t));
 }
@@ -246,6 +281,10 @@ const TYPE_GROUPS = [
   ['украшение', /^(серьг|серёж|сереж|браслет|кольц|колье|цепоч|подвес|кулон|брош|ожерель|бусы|чокер)/],
   ['косметичка', /^(косметич|несессер)/], ['ключница', /^(ключниц|брелок|брелк)/], ['обложка', /^обложк/], ['чехол', /^(чехол|чехл)/],
   ['парфюм', /^(парфюм|духи)/],
+  ['постельное бельё', /^(постельн|простын|пододеяльн|наволоч)/], ['полотенце', /^полотен/], ['плед', /^(плед|покрывал)/],
+  ['подушка', /^подушк/], ['одеяло', /^одеял/], ['скатерть', /^скатерт/], ['шторы', /^(штор|занавес|тюл)/],
+  ['ковёр', /^(ков[её]р|ковр|коврик)/], ['свеча', /^(свеч|подсвечник)/], ['диффузор', /^(диффузор|аромадиффузор)/],
+  ['посуда', /^(посуд|сервиз|тарелк|блюд[оа]$|чашк|кружк|бокал|фужер|стакан|кастрюл|сковород)/],
   ['лоферы', /^лофер/], ['ботильоны', /^ботильон/], ['ботинки', /^ботин/], ['кеды', /^кед/], ['кроссовки', /^кроссовк/],
   ['туфли', /^туфл/], ['сапоги', /^сапог/], ['мокасины', /^мокасин/], ['босоножки', /^босонож/], ['сандалии', /^сандал/],
   ['балетки', /^балетк/], ['мюли', /^мюли/], ['сабо', /^сабо$/],
@@ -332,7 +371,7 @@ export function runFromParams(sp) {
   const budget = +(sp.get('budget') || '').replace(/\D/g, '') || null;
   return {
     q,
-    ds: ['shoes', 'acc'].includes(sp.get('ds')) ? sp.get('ds') : 'trench',
+    ds: ['shoes', 'acc', 'home'].includes(sp.get('ds')) ? sp.get('ds') : 'trench',
     stores,
     crit: {
       brands: list('brands'), size: sp.get('size') || null, color: color.length ? color : null, budget,
