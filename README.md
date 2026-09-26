@@ -37,8 +37,10 @@ npm run preview  # просмотр собранной версии
 
 ### GitHub Pages
 
-В репозитории есть workflow `.github/workflows/deploy.yml`: он собирает сайт при пуше в `main`.
-Один раз включите **Settings → Pages → Source: GitHub Actions**.
+Сайт: https://healingward.github.io/msrbka/
+
+Workflow `.github/workflows/deploy.yml` при каждом пуше в `main` прогоняет тесты, собирает сайт
+и публикует `dist/` в ветку `gh-pages`, которую раздаёт GitHub Pages.
 
 ## Структура
 
