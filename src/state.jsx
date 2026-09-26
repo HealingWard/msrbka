@@ -3,6 +3,8 @@ import { STORE_NAMES } from './data/catalog.js';
 import { usePersistentState } from './lib/storage.js';
 import { navigate } from './lib/router.js';
 import { runKey, runToParams } from './lib/search.js';
+import { isLive } from './lib/config.js';
+import { DEMO_BY_ID, snapshot } from './lib/items.js';
 
 const DAY = 86400000;
 const ago = (days, h = 12, m = 0) => {
@@ -20,11 +22,13 @@ const seedSaved = () => [
   { id: 'q3', q: 'чёрный тренч S', ds: 'trench', stores: ['Lamoda'],
     crit: { brands: [], size: 'S', color: ['чёрный'], budget: null }, last: ago(24, 21, 40) },
 ];
-const seedFavs = () => ({
+// Демо-избранное — только без сервера: в живом режиме избранное начинается с реальных товаров.
+const seedFavs = () => (isLive() ? {} : {
   t1: { addedAt: ago(40), coll: 'c1' }, t4: { addedAt: ago(21), coll: 'c1' }, t12: { addedAt: ago(9), coll: 'c1' },
   s1: { addedAt: ago(60), coll: 'c2' }, s3: { addedAt: ago(33), coll: 'c2' }, t8: { addedAt: ago(14), coll: 'c3' },
   s6: { addedAt: ago(5), coll: '' },
 });
+const MAX_CACHED_RUNS = 4;
 const seedColls = () => [
   { id: 'c1', name: 'Тренч на осень' }, { id: 'c2', name: 'Обувь' }, { id: 'c3', name: 'Подарки' },
 ];
@@ -40,7 +44,8 @@ export function AppProvider({ children }) {
   const [query, setQuery] = usePersistentState('query', 'бежевый тренч до 25 000', 'session');
   const [pending, setPending] = usePersistentState('pending', null, 'session');
   const [lastRun, setLastRun] = usePersistentState('lastRun', null, 'session');
-  const [animateKey, setAnimateKey] = useState(null);
+  // Выдача по магазинам для последних поисков: key → { at, stores: { [магазин]: { status, items, error, searchUrl } } }
+  const [results, setResults] = usePersistentState('results', {}, 'session');
   const [toast, setToast] = useState(null);
   const notify = useCallback((msg) => setToast(msg), []);
   const clearToast = useCallback(() => setToast(null), []);
@@ -51,9 +56,31 @@ export function AppProvider({ children }) {
     const now = new Date().toISOString();
     setLastRun({ ...run, at: now });
     setSaved((list) => list.map((s) => (s.q === run.q && s.ds === run.ds ? { ...s, last: now } : s)));
-    setAnimateKey(runKey(run));
+    // Новый запуск всегда ищет заново.
+    const key = runKey(run);
+    setResults((r) => { const next = { ...r }; delete next[key]; return next; });
     navigate('/results?' + runToParams(run));
-  }, [setLastRun, setSaved]);
+  }, [setLastRun, setSaved, setResults]);
+
+  const setStoreResult = useCallback((key, store, res) => {
+    setResults((r) => {
+      const prev = r[key] || { stores: {} };
+      const entry = { ...prev, at: new Date().toISOString(), stores: { ...prev.stores, [store]: res } };
+      const keys = Object.keys(r).filter((k) => k !== key).slice(-(MAX_CACHED_RUNS - 1));
+      return { ...Object.fromEntries(keys.map((k) => [k, r[k]])), [key]: entry };
+    });
+  }, [setResults]);
+
+  /** Товар по id: из выдачи последних поисков, избранного или демо-каталога. */
+  const findItem = useCallback((id) => {
+    for (const e of Object.values(results)) {
+      for (const st of Object.values(e.stores || {})) {
+        const hit = (st.items || []).find((x) => x.id === id);
+        if (hit) return hit;
+      }
+    }
+    return favs[id]?.item || DEMO_BY_ID[id] || null;
+  }, [results, favs]);
 
   const relaunch = useCallback((id) => {
     const s = saved.find((x) => x.id === id);
@@ -71,13 +98,18 @@ export function AppProvider({ children }) {
 
   const deleteSearch = useCallback((id) => setSaved((list) => list.filter((s) => s.id !== id)), [setSaved]);
 
-  const toggleFav = useCallback((id, coll = '') => {
+  const toggleFav = useCallback((item, coll = '') => {
     setFavs((f) => {
       const next = { ...f };
-      if (next[id]) delete next[id];
-      else next[id] = { addedAt: new Date().toISOString(), coll };
+      if (next[item.id]) delete next[item.id];
+      else next[item.id] = { addedAt: new Date().toISOString(), coll, item: snapshot(item), priceAtAdd: item.price };
       return next;
     });
+  }, [setFavs]);
+
+  /** Обновляет снимок товара в избранном (после открытия карточки с актуальной ценой). */
+  const refreshFav = useCallback((item) => {
+    setFavs((f) => (f[item.id] ? { ...f, [item.id]: { ...f[item.id], item: snapshot(item) } } : f));
   }, [setFavs]);
 
   const setFavColl = useCallback((id, coll) => setFavs((f) => (f[id] ? { ...f, [id]: { ...f[id], coll } } : f)), [setFavs]);
@@ -94,11 +126,11 @@ export function AppProvider({ children }) {
   }, [setColls, setFavs]);
 
   const value = useMemo(() => ({
-    saved, favs, colls, prefs, query, pending, lastRun, animateKey, toast, notify, clearToast,
-    setQuery, setPending, setLastRun, setAnimateKey, setPref,
-    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, animateKey, toast, notify, clearToast, setQuery, setPending, setLastRun, setPref,
-    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setFavColl, addColl, removeColl]);
+    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast,
+    setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
+    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, setQuery, setPending, setLastRun, setPref,
+    setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

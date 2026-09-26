@@ -1,5 +1,5 @@
 import { fmt, rub, signedPct } from './format.js';
-import { periodStats, priceHistory } from './priceHistory.js';
+import { historyStats } from './history.js';
 import { productView } from './product.js';
 
 export const EXPORT_COLUMNS = [
@@ -18,17 +18,19 @@ export const columnLetter = (i) => {
 const cell = (v, align = 'left', href = '') => ({ v: String(v), align, href });
 
 /** Строки выгрузки: по одной ячейке на колонку EXPORT_COLUMNS. */
-export function exportRows(items, checked) {
+/** histories: { [id]: [{t, price}] } — средняя и минимум считаются, если проверок хотя бы две. */
+export function exportRows(items, checked, histories = {}) {
   return items.map(({ p, m }) => {
     const v = productView(p);
-    const st = periodStats(priceHistory(p), 90);
-    const va = Math.round(((st.cur - st.avg) / st.avg) * 100);
+    const st = historyStats(histories[p.id], 90);
+    const has = st && st.count >= 2;
+    const va = has ? Math.round(((p.price - st.avg) / st.avg) * 100) : null;
     return [
-      cell('фото', 'left', v.url), cell(p.title), cell(p.brand), cell(p.store),
-      cell(rub(p.price), 'right'), cell(p.old ? rub(p.old) : '', 'right'), cell(p.old ? v.discStr : '', 'right'),
-      cell(rub(Math.round(st.avg / 10) * 10), 'right'), cell(rub(st.min), 'right'), cell(signedPct(va), 'right'),
-      cell(v.rating, 'right'), cell(fmt(p.reviews), 'right'), cell(p.stock), cell(p.sizes.join(', ')), cell(p.color),
-      cell(m.score + '%', 'right'), cell(m.summary), cell(checked), cell(v.domain + ' / ' + p.id, 'left', v.url),
+      cell(p.image ? 'фото' : '', 'left', p.image || ''), cell(p.title), cell(p.brand || ''), cell(p.store),
+      cell(rub(p.price), 'right'), cell(v.hasOld ? rub(p.old) : '', 'right'), cell(v.hasOld ? v.discStr : '', 'right'),
+      cell(has ? rub(Math.round(st.avg / 10) * 10) : '', 'right'), cell(has ? rub(st.min) : '', 'right'), cell(has ? signedPct(va) : '', 'right'),
+      cell(v.rating, 'right'), cell(p.reviews ? fmt(p.reviews) : '', 'right'), cell(v.stock), cell((p.sizes || []).join(', ')), cell(p.color || ''),
+      cell(m.score + '%', 'right'), cell(m.summary), cell(checked), cell(v.domain + (p.demo ? ' / поиск' : ''), 'left', v.url),
     ];
   });
 }

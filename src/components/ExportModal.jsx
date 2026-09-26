@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { EXPORT_COLUMNS, columnLetter, copyTable, downloadFile, exportRows, safeFileName, toCSV } from '../lib/export.js';
 import { countStr, dateStamp } from '../lib/format.js';
+import { fetchHistories } from '../lib/source.js';
 import { Segmented } from './ui.jsx';
 
 const SHEETS_URL = { new: 'https://sheets.new', existing: 'https://docs.google.com/spreadsheets/' };
@@ -11,8 +12,15 @@ export function ExportModal({ query, list, base, checked, onClose }) {
   const [name, setName] = useState(() => 'Прицел — ' + query + ' — ' + dateStamp());
   const [state, setState] = useState('idle'); // idle | working | done | failed
 
+  const [histories, setHistories] = useState({});
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchHistories(base.map((x) => x.p), ctrl.signal).then(setHistories).catch(() => {});
+    return () => ctrl.abort();
+  }, [base]);
+
   const items = scope === 'filtered' ? list : base;
-  const rows = useMemo(() => exportRows(items, checked), [items, checked]);
+  const rows = useMemo(() => exportRows(items, checked, histories), [items, checked, histories]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };

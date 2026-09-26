@@ -1,4 +1,4 @@
-import { BRANDS, NEAR, PRODUCTS, STORE_NAMES } from '../data/catalog.js';
+import { BRANDS, NEAR, STORE_NAMES } from '../data/catalog.js';
 import { cap, rub } from './format.js';
 
 export const colorList = (c) => [].concat(c || []);
@@ -17,19 +17,38 @@ const norm = (s) => s.toLowerCase().replace(/ё/g, 'е');
  * Разбирает свободный запрос: цвет(а), размер, бюджет, бренды и тип товара.
  * `cats` — выбранные на главной категории, помогают, если тип не назван в тексте.
  */
+/** Цвета, упомянутые в тексте (в каноничной форме: «бежевый», «тёмно-синий»…). */
+export function detectColors(text) {
+  const low = norm(text);
+  const words = low.split(/[^a-zа-я0-9]+/).filter(Boolean);
+  const colors = [];
+  const add = (c) => { if (!colors.includes(c)) colors.push(c); };
+  if (/темно\s*-?\s*син/.test(low)) add('тёмно-синий');
+  for (const w of words) {
+    for (const [stem, c] of COLOR_STEMS) if (w.startsWith(stem)) add(c);
+    if (/^син(ий|ие|яя|ее|их|юю|его|ей)$/.test(w) && !colors.includes('тёмно-синий')) add('синий');
+    if (/^бел(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('белый');
+    if (/^сер(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('серый');
+  }
+  return colors;
+}
+
+const brandRe = (b) => new RegExp('(^|[^a-zа-я0-9])' + escapeRe(norm(b)) + '(?=$|[^a-zа-я0-9])');
+
+/** Бренды из списка, упомянутые в тексте; «Esprit» отбрасывается, если нашёлся «Esprit Casual». */
+export function detectBrands(text) {
+  const low = norm(text);
+  return BRANDS
+    .filter((b) => brandRe(b).test(low))
+    .filter((b, _, arr) => !arr.some((o) => o !== b && o.toLowerCase().includes(b.toLowerCase())));
+}
+
 export function parseQuery(q, cats = []) {
   const low = norm(q);
   const words = low.split(/[^a-zа-я0-9]+/).filter(Boolean);
   let size = null, budget = null;
-  const colors = [];
-  const add = (c) => { if (!colors.includes(c)) colors.push(c); };
-
-  if (/темно\s*-?\s*син/.test(low)) add('тёмно-синий');
+  const colors = detectColors(q);
   for (const w of words) {
-    for (const [stem, c] of COLOR_STEMS) if (w.startsWith(stem)) add(c);
-    if (/^син(ий|ие|яя|ее|их|юю|его)$/.test(w) && !colors.includes('тёмно-синий')) add('синий');
-    if (/^бел(ый|ые|ая|ое|ых|ую|ого)$/.test(w)) add('белый');
-    if (/^сер(ый|ые|ая|ое|ых|ую|ого)$/.test(w)) add('серый');
     if (['xxs', 'xs', 's', 'm', 'l', 'xl', 'xxl'].includes(w)) size = w.toUpperCase();
   }
   const sizeMatch = low.match(/(\d{2})\s*-?\s*(й\s*)?размер/) || low.match(/размер[а-я]*\s*(\d{2})/);
@@ -41,10 +60,7 @@ export function parseQuery(q, cats = []) {
     if (budget < 500) budget = null;
   }
 
-  const brands = BRANDS
-    .filter((b) => new RegExp('(^|[^a-zа-я0-9])' + escapeRe(norm(b)) + '(?=$|[^a-zа-я0-9])').test(low))
-    // «Esprit» не нужен, если нашёлся «Esprit Casual»
-    .filter((b, _, arr) => !arr.some((o) => o !== b && o.toLowerCase().includes(b.toLowerCase())));
+  const brands = detectBrands(q);
 
   let ds = 'trench';
   if (/кед|кросс|обув|ботин|туфл/.test(low)) ds = 'shoes';
@@ -64,21 +80,27 @@ export function missingCriteria(crit) {
 }
 
 const WEIGHTS = { brand: 40, size: 30, color: 20, price: 10 };
-const FACTOR = { ok: 1, any: 1, near: 0.5, no: 0 };
-export const GLYPH = { ok: '✓', near: '≈', no: '✕', any: '—' };
+// unk — магазин не сообщил этот параметр (например, размеры в выдаче), проверить нельзя.
+const FACTOR = { ok: 1, any: 1, near: 0.5, unk: 0.5, no: 0 };
+export const GLYPH = { ok: '✓', near: '≈', no: '✕', any: '—', unk: '?' };
 const LABEL = { brand: 'Бренд', size: 'Размер', color: 'Цвет', price: 'Цена' };
 const KEYS = ['brand', 'size', 'color', 'price'];
 
 /** Оценивает товар по критериям: процент соответствия, пояснение и разбор по пунктам. */
 export function matchProduct(p, c = {}) {
   const r = {};
+  const lc = (x) => x.toLowerCase();
   r.brand = c.brands && c.brands.length
-    ? (c.brands.includes(p.brand) ? { s: 'ok', t: 'совпадает — ' + p.brand } : { s: 'no', t: 'другой бренд — ' + p.brand })
+    ? (!p.brand ? { s: 'unk', t: 'магазин не указал бренд' }
+      : c.brands.some((b) => lc(b) === lc(p.brand)) ? { s: 'ok', t: 'совпадает — ' + p.brand } : { s: 'no', t: 'другой бренд — ' + p.brand })
     : { s: 'any', t: 'не важен' };
+  const sizes = p.sizes || [];
   r.size = c.size
-    ? (p.sizes.includes(c.size) ? { s: 'ok', t: c.size + ' в наличии' } : { s: 'no', t: 'нет ' + c.size + ', есть ' + p.sizes.join(', ') })
+    ? (!sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
+      : sizes.some((z) => lc(z) === lc(c.size)) ? { s: 'ok', t: c.size + ' в наличии' } : { s: 'no', t: 'нет ' + c.size + ', есть ' + sizes.join(', ') })
     : { s: 'any', t: 'не указан' };
-  if (c.color) {
+  if (c.color && !p.color) r.color = { s: 'unk', t: 'магазин не указал цвет' };
+  else if (c.color) {
     const cs = colorList(c.color);
     if (cs.includes(p.color)) r.color = { s: 'ok', t: p.color + ' — как в запросе' };
     else {
@@ -108,6 +130,8 @@ export function matchProduct(p, c = {}) {
   if (r.size.s === 'no') parts.push('нет размера ' + c.size);
   if (r.color.s === 'near') parts.push('цвет близкий (' + r.color.t.replace('близкий: ', '') + ')');
   if (r.color.s === 'no') parts.push('другой цвет (' + p.color + ')');
+  const unk = ['brand', 'size', 'color'].filter((k) => r[k].s === 'unk').map((k) => names[k]);
+  if (unk.length) parts.push(unk.join(' и ') + ' — уточните в магазине');
   if (r.price.s === 'ok') parts.push('в пределах бюджета');
   else if (r.price.s !== 'any') parts.push('цена ' + r.price.t);
   if (!parts.length) parts.push('подходит по описанию запроса');
@@ -120,9 +144,9 @@ export function matchProduct(p, c = {}) {
   };
 }
 
-/** Товары, которые попадают в выдачу по магазинам, типу и размеру. */
-export const baseProducts = (run) =>
-  PRODUCTS.filter((p) => p.ds === run.ds && run.stores.includes(p.store) && (!run.crit.size || p.sizes.includes(run.crit.size)));
+/** Товары, которые попадают в выдачу: нужный размер есть или магазин не сообщил размеры. */
+export const baseProducts = (items, crit) =>
+  items.filter((p) => !crit.size || !(p.sizes && p.sizes.length) || p.sizes.some((z) => z.toLowerCase() === crit.size.toLowerCase()));
 
 export const emptyFilters = () => ({ stores: [], brands: [], sizes: [], colors: [], min: '', max: '' });
 export const hasFilters = (f) => !!(f.stores.length || f.brands.length || f.sizes.length || f.colors.length || f.min || f.max);
@@ -135,14 +159,14 @@ const SORTERS = {
   discount: (x, y) => discount(y.p) - discount(x.p),
 };
 
-export function getResults(run, filters, sort) {
+export function getResults(items, crit, filters, sort) {
   const sorter = SORTERS[sort] || SORTERS.match;
-  const base = baseProducts(run).map((p) => ({ p, m: matchProduct(p, run.crit) })).sort(sorter);
+  const base = baseProducts(items, crit).map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
   const f = filters;
   const list = base.filter(({ p }) =>
     (!f.stores.length || f.stores.includes(p.store)) &&
     (!f.brands.length || f.brands.includes(p.brand)) &&
-    (!f.sizes.length || f.sizes.some((z) => p.sizes.includes(z))) &&
+    (!f.sizes.length || f.sizes.some((z) => (p.sizes || []).includes(z))) &&
     (!f.colors.length || f.colors.includes(p.color)) &&
     (!f.min || p.price >= +f.min) &&
     (!f.max || p.price <= +f.max));

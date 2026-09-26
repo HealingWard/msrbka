@@ -3,6 +3,9 @@ import { PRODUCT_BY_ID } from '../../data/catalog.js';
 import { columnLetter, exportRows, toCSV } from '../export.js';
 import { plural, rub } from '../format.js';
 import { getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams } from '../search.js';
+import { DEMO_ITEMS, liveItem } from '../items.js';
+import { storeQuery } from '../source.js';
+import { historyStats, priceAt } from '../history.js';
 
 describe('parseQuery', () => {
   it('понимает цвет, тип и бюджет', () => {
@@ -54,15 +57,16 @@ describe('missingCriteria', () => {
 
 describe('results', () => {
   const run = { q: 'бежевый тренч до 25 000', ds: 'trench', stores: ['Lamoda', 'Stockmann'], crit: { brands: [], size: 'M', color: ['бежевый'], budget: 25000 } };
-  it('фильтрует по магазинам и размеру, сортирует по соответствию', () => {
-    const { base } = getResults(run, emptyFilters(), 'match');
+  const items = DEMO_ITEMS.filter((p) => p.ds === run.ds && run.stores.includes(p.store));
+  it('фильтрует по размеру, сортирует по соответствию', () => {
+    const { base } = getResults(items, run.crit, emptyFilters(), 'match');
     expect(base.length).toBeGreaterThan(0);
     expect(base.every(({ p }) => run.stores.includes(p.store) && p.sizes.includes('M'))).toBe(true);
     const scores = base.map((x) => x.m.score);
     expect(scores).toEqual([...scores].sort((a, b) => b - a));
   });
   it('применяет фильтры цены', () => {
-    const { list } = getResults(run, { ...emptyFilters(), max: '20000' }, 'priceAsc');
+    const { list } = getResults(items, run.crit, { ...emptyFilters(), max: '20000' }, 'priceAsc');
     expect(list.every(({ p }) => p.price <= 20000)).toBe(true);
     expect(list.map((x) => x.p.price)).toEqual([...list.map((x) => x.p.price)].sort((a, b) => a - b));
   });
@@ -81,7 +85,8 @@ describe('export', () => {
   });
   it('CSV содержит заголовок, числа без ₽ и ссылки', () => {
     const p = PRODUCT_BY_ID.t1;
-    const csv = toCSV(exportRows([{ p, m: matchProduct(p, {}) }], 'сегодня, 10:00'));
+    const item = DEMO_ITEMS.find((x) => x.id === p.id);
+    const csv = toCSV(exportRows([{ p: item, m: matchProduct(item, {}) }], 'сегодня, 10:00'));
     const [head, row] = csv.replace('﻿', '').split('\r\n');
     expect(head.split(',')[0]).toBe('Фото');
     expect(row).toContain('23990');
@@ -95,5 +100,44 @@ describe('format', () => {
   });
   it('форматирует рубли', () => {
     expect(rub(23990)).toMatch(/^23\s990 ₽$/);
+  });
+});
+
+describe('живые товары', () => {
+  it('запрос для магазина без бюджета и размера', () => {
+    expect(storeQuery({ q: 'бежевый тренч до 25 000', crit: { brands: [] } })).toBe('бежевый тренч');
+    expect(storeQuery({ q: 'белые кеды Veja, 38 размер, до 15 000', crit: { brands: ['Veja'] } })).toBe('белые кеды Veja');
+    expect(storeQuery({ q: 'чёрный тренч 12 Storeez S до 30 000', crit: { brands: ['12 Storeez'] } })).toBe('чёрный тренч 12 Storeez');
+    expect(storeQuery({ q: 'тренч M', crit: { brands: ['Mango'] } })).toBe('Mango тренч');
+  });
+  it('бренд и цвет берутся из названия, если магазин их не дал', () => {
+    const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'https://www.lamoda.ru/p/x/', title: 'Тренч Gerry Weber бежевого цвета', price: 18990, inStock: true });
+    expect(it.brand).toBe('Gerry Weber');
+    expect(it.color).toBe('бежевый');
+    expect(it.stock).toBe('В наличии');
+  });
+  it('неизвестные размер и бренд не обнуляют соответствие', () => {
+    const it = liveItem({ id: 'x', store: 'Lamoda', url: 'u', title: 'Тренч', price: 10000 });
+    const m = matchProduct(it, { brands: ['Mango'], size: 'M', color: ['бежевый'], budget: 20000 });
+    expect(m.score).toBe(20 + 15 + 10 + 10);
+    expect(m.reasons.find((r) => r.key === 'size').s).toBe('unk');
+    const { base } = getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match');
+    expect(base.length).toBe(1);
+  });
+});
+
+describe('история цены', () => {
+  const day = 86400000, now = 100 * day;
+  const pts = [{ t: 10 * day, price: 1000 }, { t: 80 * day, price: 800 }, { t: 95 * day, price: 900 }];
+  it('статистика за период с ценой «на входе»', () => {
+    const st = historyStats(pts, 30, now);
+    expect(st.cur).toBe(900);
+    expect(st.min).toBe(800);
+    expect(st.pts[0]).toEqual({ t: 70 * day, price: 1000 });
+    expect(Math.round(st.avg)).toBe(Math.round((1000 * 10 + 800 * 15 + 900 * 5) / 30));
+  });
+  it('цена на дату', () => {
+    expect(priceAt(pts, 50 * day)).toBe(1000);
+    expect(priceAt(pts, 5 * day)).toBe(null);
   });
 });

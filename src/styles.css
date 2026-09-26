@@ -531,3 +531,24 @@ h1 { font-weight: 500; }
   .modal-head, .modal-controls, .modal-foot { padding-left: 16px; padding-right: 16px; }
   .modal-foot .btn { flex: 1; }
 }
+
+/* ——— Живые данные ——— */
+.photo-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card-photo, .gallery-main, .thumb { overflow: hidden; }
+.card-photo .photo-img { object-fit: contain; background: #fff; }
+.thumb { position: relative; }
+.gallery-main { position: relative; }
+.gallery-main .photo-img { object-fit: contain; background: #fff; }
+.gallery-thumbs button { position: relative; overflow: hidden; }
+.pill.unk { border-style: dashed; color: var(--ink2); }
+.reason .dot.unk { border-style: dashed; color: var(--ink2); }
+.store-notes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.store-note {
+  display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; padding: 10px 14px; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--line); font-size: 13px; color: var(--ink2);
+}
+.store-note b { color: var(--ink); font-weight: 500; }
+.store-note a { margin-left: auto; font-size: 12.5px; }
+.load-row .status.fail { color: var(--acc); }
+.chart-empty { padding: 28px 0 8px; color: var(--ink2); font-size: 13.5px; line-height: 1.5; }
+.mode-badge { font-size: 11px; font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); }

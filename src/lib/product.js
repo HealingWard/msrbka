@@ -1,21 +1,25 @@
-import { HEX, productUrl, storeByName } from '../data/catalog.js';
+import { HEX, storeByName } from '../data/catalog.js';
 import { fmt, plural, rub } from './format.js';
 
 /** Отображаемые поля товара, общие для карточки, строки таблицы, страницы товара и выгрузки. */
 export function productView(p) {
   const disc = p.old ? Math.round((1 - p.price / p.old) * 100) : 0;
+  const sizes = p.sizes || [];
+  const store = storeByName(p.store);
   return {
     priceStr: rub(p.price),
     oldStr: p.old ? rub(p.old) : '',
-    hasOld: !!p.old,
+    hasOld: !!p.old && disc > 0,
     disc,
     discStr: '−' + disc + '%',
-    rating: p.rating.toFixed(1).replace('.', ','),
-    reviewsStr: fmt(p.reviews) + ' ' + plural(p.reviews, ['отзыв', 'отзыва', 'отзывов']),
-    lowStock: p.stock !== 'В наличии',
-    sizesStr: p.sizes.join(' · '),
-    colorHex: HEX[p.color] || '#ccc',
-    url: productUrl(p),
-    domain: storeByName(p.store).domain,
+    rating: p.rating ? p.rating.toFixed(1).replace('.', ',') : '',
+    reviewsStr: p.reviews ? fmt(p.reviews) + ' ' + plural(p.reviews, ['отзыв', 'отзыва', 'отзывов']) : '',
+    stock: p.stock || '',
+    lowStock: !!p.stock && p.stock !== 'В наличии',
+    sizesStr: sizes.length ? sizes.join(' · ') : 'уточните в магазине',
+    colorStr: p.color || 'не указан',
+    colorHex: HEX[p.color] || null,
+    url: p.url,
+    domain: store ? store.domain : (() => { try { return new URL(p.url).host.replace(/^www\./, ''); } catch { return ''; } })(),
   };
 }

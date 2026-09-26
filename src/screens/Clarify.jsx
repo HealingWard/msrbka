@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ALLSIZES, BRANDS, PRODUCTS, STORE_NAMES } from '../data/catalog.js';
+import { BRANDS, PRODUCTS, STORE_NAMES } from '../data/catalog.js';
+import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { colorList, colorStr } from '../lib/search.js';
@@ -7,11 +8,12 @@ import { BrandPicker, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const ANY_BRAND = 'Любой бренд';
+const SIZE_OPTS = { trench: ['XS', 'S', 'M', 'L', 'XL', 'XXL'], shoes: ['36', '37', '38', '39', '40', '41', '42'] };
 
 function questionsFor(ds) {
   return {
     store: { title: 'В каких магазинах искать?', hint: 'Ищу только в отмеченных — выберите те, которым доверяете', opts: STORE_NAMES, multi: true, required: true, noCustom: true },
-    size: { title: 'Какой размер?', hint: 'Покажу только товары, где ваш размер есть в наличии', opts: ALLSIZES[ds], required: true, ph: 'Свой, например 44' },
+    size: { title: 'Какой размер?', hint: 'Покажу только товары, где ваш размер есть в наличии', opts: SIZE_OPTS[ds], required: true, ph: 'Свой, например 44' },
     brand: { title: 'Есть предпочтения по бренду?', hint: 'Бренд — главный критерий при ранжировании', multi: true, ph: 'Другой бренд' },
     color: { title: 'Какой цвет?', hint: 'Близкие оттенки тоже покажу, но ниже', opts: ['бежевый', 'чёрный', 'белый', 'серый', 'синий', 'шоколадный', 'молочный', 'хаки', 'любой'], multi: true, ph: 'Свои, через запятую' },
     budget: { title: 'Какой бюджет?', hint: 'Товары чуть дороже бюджета отмечу отдельно', opts: ['до 10 000 ₽', 'до 25 000 ₽', 'до 50 000 ₽', 'Не важно'], ph: 'Своя сумма, ₽' },
@@ -84,8 +86,9 @@ export function Clarify() {
   const qBrands = (ans.brand || []).filter((x) => x !== ANY_BRAND);
   const anyOn = (ans.brand || []).includes(ANY_BRAND);
   const inResults = (b) => {
+    if (isLive()) return '';
     const n = PRODUCTS.filter((p) => p.ds === ds && p.brand === b).length;
-    return n ? n + ' в выдаче' : '';
+    return n ? n + ' в демо-каталоге' : '';
   };
 
   return (
