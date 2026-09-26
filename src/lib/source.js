@@ -2,7 +2,7 @@
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extSearch, extensionVersion } from './extension.js';
-import { CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
+import { BED_SIZE, CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -23,6 +23,8 @@ export function storeQueries(run) {
   q = q.replace(/(^|[\s,])\d{2}\s*-?\s*(?:й\s*)?размер[а-я]*(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])размер[а-я]*\s*\d{2}(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])(?:xxs|xs|s|m|l|xl|xxl)(?=[\s,]|$)/gi, ' ');
+  // Размер белья («евро», «2-спальный») фильтрует «Прицел»: в запросе магазина он сужает выдачу до нуля.
+  if (run.ds === 'home') q = q.replace(new RegExp('(^|[\\s,])' + BED_SIZE + '(?=[\\s,]|$)', 'gi'), ' ');
   if (run.crit.size && /^\d{2}$/.test(run.crit.size)) q = q.replace(new RegExp('(^|[\\s,])' + run.crit.size + '(?=[\\s,]|$)', 'g'), ' ');
   // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — их фильтрует «Прицел».
   // Один цвет оставляем: он хорошо сужает выдачу магазина.

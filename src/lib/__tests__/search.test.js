@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PRODUCT_BY_ID } from '../../data/catalog.js';
 import { columnLetter, exportRows, toCSV } from '../export.js';
 import { plural, rub } from '../format.js';
-import { detectTypes, getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams } from '../search.js';
+import { detectTypes, getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams, sizeEq, sizeRequired } from '../search.js';
 import { DEMO_ITEMS, liveItem } from '../items.js';
 import { storeQuery, storeQueries } from '../source.js';
 import { historyStats, priceAt } from '../history.js';
@@ -252,5 +252,36 @@ describe('для кого', () => {
     expect(parseQuery('тренч до 40 000').size).toBe(null);
     expect(storeQueries({ q: 'лоферы 40', crit: { brands: [], gender: 'women', size: '40' } })).toEqual(['лоферы женские']);
     expect(storeQueries({ q: 'лоферы мужские 43', crit: { brands: [], gender: 'men', size: '43' } })).toEqual(['лоферы мужские']);
+  });
+});
+
+describe('товары для дома', () => {
+  it('постельное бельё — дом: без размера одежды и без «для кого»', () => {
+    const p = parseQuery('постельное белье');
+    expect(p.ds).toBe('home');
+    expect(p.size).toBe(null);
+    expect(p.gender).toBe(null);
+    expect(missingCriteria({ brands: [], size: null }, 'home')).toContain('size');
+    expect(sizeRequired('home')).toBe(false);
+    expect(parseQuery('кружевное платье M').ds).toBe('trench');
+  });
+  it('размер белья из запроса и его сравнение', () => {
+    expect(parseQuery('комплект постельного белья 2-спальный').size).toBe('2-спальный');
+    expect(parseQuery('постельное белье евро').size).toBe('евро');
+    expect(parseQuery('полуторное постельное белье').size).toBe('1,5-спальный');
+    expect(sizeEq('2 сп', '2-спальный')).toBe(true);
+    expect(sizeEq('Евро', 'евро')).toBe(true);
+    expect(sizeEq('семейный', 'евро')).toBe(false);
+  });
+  it('в магазин уходит запрос без размера белья и без «женские»', () => {
+    expect(storeQueries({ q: 'постельное белье евро', ds: 'home', crit: { brands: [] } })).toEqual(['постельное белье']);
+    expect(storeQueries({ q: 'набор из 2 бокалов', ds: 'home', crit: { brands: [] } })).toEqual(['набор из 2 бокалов']);
+  });
+  it('размеры в сантиметрах не отсеивают комплект, другой размер белья — отсеивает', () => {
+    const mk = (id, sizes) => liveItem({ id, store: 'Stockmann', url: 'u' + id, title: 'Комплект постельного белья', price: 10000, sizes });
+    const items = [mk('1', ['200x220']), mk('2', ['евро']), mk('3', ['семейный'])];
+    const r = getResults(items, { brands: [], size: 'евро' }, emptyFilters(), 'match', { types: detectTypes('постельное белье') });
+    expect(r.base.map((x) => x.p.sizes[0]).sort()).toEqual(['200x220', 'евро']);
+    expect(r.base[0].m.reasons.find((x) => x.key === 'size').s).toBe('ok');
   });
 });

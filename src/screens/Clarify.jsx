@@ -3,17 +3,22 @@ import { PRODUCTS, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { GENDER_LABEL, categoryLabel, colorList, colorStr } from '../lib/search.js';
+import { GENDER_LABEL, categoryLabel, colorList, colorStr, sizeRequired } from '../lib/search.js';
 import { BrandPicker, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const ANY_BRAND = 'Любой бренд';
-const SIZE_OPTS = { trench: ['XS', 'S', 'M', 'L', 'XL', 'XXL'], shoes: ['36', '37', '38', '39', '40', '41', '42'] };
+const SIZE_OPTS = {
+  trench: ['XS', 'S', 'M', 'L', 'XL', 'XXL'], shoes: ['36', '37', '38', '39', '40', '41', '42'],
+  home: ['1,5-спальный', '2-спальный', 'евро', 'семейный', 'не важно'],
+};
 
 function questionsFor(ds) {
   return {
     store: { title: 'В каких магазинах искать?', hint: 'Ищу только в отмеченных — выберите те, которым доверяете', opts: STORE_NAMES, multi: true, required: true, noCustom: true },
-    size: { title: 'Какой размер?', hint: 'Покажу только товары, где ваш размер есть в наличии', opts: SIZE_OPTS[ds], required: true, ph: 'Свой, например 44' },
+    size: ds === 'home'
+      ? { title: 'Какой размер?', hint: 'Для постельного белья — покажу комплекты нужного размера; для остального выберите «не важно»', opts: SIZE_OPTS.home, ph: 'Свой, например 200×220' }
+      : { title: 'Какой размер?', hint: 'Покажу только товары, где ваш размер есть в наличии', opts: SIZE_OPTS[ds] || SIZE_OPTS.trench, required: true, ph: 'Свой, например 44' },
     brand: { title: 'Есть предпочтения по бренду?', hint: 'Бренд — главный критерий при ранжировании', multi: true, ph: 'Другой бренд' },
     color: { title: 'Какой цвет?', hint: 'Близкие оттенки тоже покажу, но ниже', opts: ['бежевый', 'чёрный', 'белый', 'серый', 'синий', 'шоколадный', 'молочный', 'хаки', 'любой'], multi: true, ph: 'Свои, через запятую' },
     budget: { title: 'Какой бюджет?', hint: 'Товары чуть дороже бюджета отмечу отдельно', opts: ['до 10 000 ₽', 'до 25 000 ₽', 'до 50 000 ₽', 'Не важно'], ph: 'Своя сумма, ₽' },
@@ -26,7 +31,7 @@ function resolve(pending, ans, custom, skip) {
     if (skip && k !== 'size') continue;
     const cu = (custom[k] || '').trim();
     const a = ans[k];
-    if (k === 'size') { const v = cu ? cu.toUpperCase() : a; if (v) c.size = v; }
+    if (k === 'size') { const v = cu ? (pending.ds === 'home' ? cu : cu.toUpperCase()) : a; if (v && v !== 'не важно') c.size = v; }
     if (k === 'brand') {
       c.brands = cu
         ? cu.split(',').map((x) => x.trim()).filter(Boolean).map((x) => allBrands().find((b) => b.toLowerCase() === x.toLowerCase()) || x)
@@ -65,14 +70,14 @@ export function Clarify() {
   if (c.gender) known.push({ k: 'Для кого', v: GENDER_LABEL[c.gender] || c.gender });
 
   const noStore = missing.includes('store') && !(ans.store || []).length;
-  const noSize = missing.includes('size') && !ans.size && !(custom.size || '').trim();
+  const noSize = sizeRequired(ds) && missing.includes('size') && !ans.size && !(custom.size || '').trim();
   const errText = noStore && noSize
     ? 'Отметьте магазины и укажите размер — это обязательные параметры.'
     : noStore ? 'Отметьте хотя бы один магазин — без этого искать негде.' : 'Укажите размер — в выдаче будут только товары в вашем размере.';
 
   const apply = (skip) => {
     const { crit, stores } = resolve(pending, ans, custom, skip);
-    if (!stores.length || (!crit.size && ds !== 'acc')) { setTried(true); return; }
+    if (!stores.length || (!crit.size && sizeRequired(ds))) { setTried(true); return; }
     app.setPref('selStores', stores.slice());
     app.runSearch({ q: pending.q, ds, stores, crit });
   };

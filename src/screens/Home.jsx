@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CATS, STORES, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { STORES_F, countStr, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { missingCriteria, parseQuery } from '../lib/search.js';
+import { missingCriteria, parseQuery, sizeRequired } from '../lib/search.js';
 import { BrandPicker, CheckRow, useDismiss } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
@@ -47,10 +47,11 @@ export function Home() {
     const q = query.trim();
     if (!q) return;
     const p = parseQuery(q, cats);
-    const gender = p.gender || (prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
+    // «Для кого» к товарам для дома не относится.
+    const gender = p.ds === 'home' ? null : p.gender || (prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
     const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget, ...(gender ? { gender } : {}) };
     let missing = missingCriteria(crit, p.ds);
-    if (!prefs.askClarify) missing = crit.size || p.ds === 'acc' ? [] : ['size'];
+    if (!prefs.askClarify) missing = crit.size || !sizeRequired(p.ds) ? [] : ['size'];
     if (!selStores.length || missing.length) {
       // Вопрос о магазинах показываем всегда — с уже отмеченными вариантами.
       missing = ['store', ...missing];
