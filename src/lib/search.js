@@ -158,10 +158,13 @@ export const baseProducts = (items, crit) =>
   });
 
 const normSize = (x) => String(x).toLowerCase().replace(/\s*(ru|rus|eu|it|fr|int)$/i, '').trim();
+/** «XS/42» → ['xs', '42']: у Lamoda размер указан сразу в двух системах. */
+const sizeTokens = (x) => String(x).split(/[/,()]/).map(normSize).filter(Boolean);
 
-/** Точное совпадение: «M» = «m», «38» = «38 RU». */
+/** Точное совпадение: «M» = «m», «38» = «38 RU», «XS/42» = «XS» и = «42». */
 export function sizeEq(a, b) {
-  return normSize(a) === normSize(b);
+  const tb = sizeTokens(b);
+  return sizeTokens(a).some((t) => tb.includes(t));
 }
 
 // Буквенные размеры одежды ↔ российские (как в таблицах размеров Lamoda/Stockmann, женская одежда).
@@ -169,9 +172,13 @@ const LETTER_RU = { xxs: [38, 40], xs: [40, 42], s: [42, 44], m: [44, 46], l: [4
 
 /** Примерное совпадение буквенного и российского размера: «M» ≈ «44 RU» / «46 RU». */
 export function sizeNear(a, b) {
-  const x = normSize(a), y = normSize(b);
-  const check = (letter, num) => !!LETTER_RU[letter] && /^\d{2}$/.test(num) && LETTER_RU[letter].includes(+num);
-  return check(x, y) || check(y, x);
+  const ta = sizeTokens(a), tb = sizeTokens(b);
+  const letters = (t) => t.filter((x) => LETTER_RU[x]);
+  const nums = (t) => t.filter((x) => /^\d{2}$/.test(x));
+  // Если буквенный размер указан с обеих сторон — сравниваем только буквы (это делает sizeEq).
+  if (letters(ta).length && letters(tb).length) return false;
+  const check = (ls, ns) => ls.some((l) => ns.some((n) => LETTER_RU[l].includes(+n)));
+  return check(letters(ta), nums(tb)) || check(letters(tb), nums(ta));
 }
 
 export const emptyFilters = () => ({ stores: [], brands: [], sizes: [], colors: [], min: '', max: '' });
