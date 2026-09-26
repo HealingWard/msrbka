@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ALLSIZES, HEX } from '../data/catalog.js';
 import { PRODUCTS_F, STORES_F, countStr, fmt, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { criteriaChips, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
+import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
 import { searchOne } from '../lib/source.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { ProductCard, ProductTable } from '../components/ProductCard.jsx';
@@ -131,6 +131,8 @@ export function Results({ run }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [progress, setProgress] = useState({});
+  const [showOther, setShowOther] = useState(false);
+  const types = useMemo(() => detectTypes(run.q), [run.q]);
 
   const entry = app.results[key];
   const missing = run.stores.filter((n) => !entry?.stores?.[n]);
@@ -172,7 +174,10 @@ export function Results({ run }) {
   }, [filtersOpen]);
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
-  const { base, list } = useMemo(() => getResults(items, run.crit, f, sort), [items, run.crit, f, sort]);
+  const { base, list, hidden, hiddenTypes } = useMemo(
+    () => getResults(items, run.crit, f, sort, { types, showOther }),
+    [items, run.crit, f, sort, types, showOther],
+  );
 
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
@@ -224,6 +229,18 @@ export function Results({ run }) {
                     : <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>}
                 </div>
               ))}
+            </div>
+          )}
+          {hidden > 0 && (
+            <div className="store-note" role="status">
+              <span>
+                {showOther
+                  ? <>Показаны и товары другого типа ({hiddenTypes.join(', ')}): {hidden}.</>
+                  : <>Скрыто {countStr(hidden, PRODUCTS_F)} другого типа ({hiddenTypes.join(', ')}) — магазин нашёл их по похожим словам.</>}
+              </span>
+              <button type="button" className="link-btn underline" style={{ marginLeft: 'auto' }} onClick={() => setShowOther(!showOther)}>
+                {showOther ? 'Скрыть' : 'Показать'}
+              </button>
             </div>
           )}
           <div className="toolbar">

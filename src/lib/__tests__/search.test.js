@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PRODUCT_BY_ID } from '../../data/catalog.js';
 import { columnLetter, exportRows, toCSV } from '../export.js';
 import { plural, rub } from '../format.js';
-import { getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams } from '../search.js';
+import { detectTypes, getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams } from '../search.js';
 import { DEMO_ITEMS, liveItem } from '../items.js';
 import { storeQuery, storeQueries } from '../source.js';
 import { historyStats, priceAt } from '../history.js';
@@ -198,5 +198,26 @@ describe('без размера', () => {
     const { base } = getResults([bag], { size: 'M', brands: [] }, emptyFilters(), 'match');
     expect(base.length).toBe(1);
     expect(base[0].m.reasons.find((r) => r.key === 'size')).toMatchObject({ s: 'ok', text: 'единый размер' });
+  });
+});
+
+describe('тип товара', () => {
+  it('«брючный» — не брюки', () => {
+    expect(detectTypes('брючный костюм')).toEqual(['костюм']);
+    expect(detectTypes('Брюки прямые')).toEqual(['брюки']);
+    expect(detectTypes('Жакет двубортный')).toEqual(['жакет']);
+    expect(detectTypes('Плащ')).toEqual(['тренч']);
+  });
+  it('товары другого типа скрываются, но их можно показать', () => {
+    const mk = (id, title) => liveItem({ id, store: 'Lamoda', url: 'u' + id, title, price: 10000 });
+    const items = [mk('1', 'Костюм брючный'), mk('2', 'Брюки'), mk('3', 'Жакет'), mk('4', 'Комплект Nice')];
+    const r = getResults(items, { brands: [] }, emptyFilters(), 'match', { types: ['костюм'] });
+    expect(r.base.map((x) => x.p.title)).toEqual(['Костюм брючный', 'Комплект Nice']);
+    expect(r.hidden).toBe(2);
+    expect(r.hiddenTypes).toEqual(['брюки', 'жакет']);
+    expect(getResults(items, { brands: [] }, emptyFilters(), 'match', { types: ['костюм'], showOther: true }).base.length).toBe(4);
+  });
+  it('запрос с «брючный» дополняется запросом по главному слову', () => {
+    expect(storeQueries({ q: 'брючный костюм женский M', crit: { brands: [] } })).toEqual(['брючный костюм женский', 'костюм женский']);
   });
 });

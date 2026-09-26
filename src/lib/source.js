@@ -2,7 +2,7 @@
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extSearch, extensionVersion } from './extension.js';
-import { detectColors } from './search.js';
+import { CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -47,6 +47,12 @@ export function storeQueries(run) {
       if (brands.length === 1 && !part.toLowerCase().includes(brands[0].toLowerCase())) part = brands[0] + ' ' + part;
       return part;
     });
+  // «брючный костюм»: поиск магазина находит брюки — добавляем запрос по главному слову («костюм»).
+  for (const part of [...parts]) {
+    if (!CONFUSING_ADJ.test(' ' + part + ' ')) continue;
+    const core = part.split(/\s+/).filter((w) => !CONFUSING_ADJ.test(' ' + w + ' ')).join(' ').trim();
+    if (detectTypes(core).length) parts.push(core);
+  }
   const uniq = [...new Set(parts.map((x) => x.toLowerCase()))].map((l) => parts.find((x) => x.toLowerCase() === l));
   if (!uniq.length) {
     const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();

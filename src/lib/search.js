@@ -205,9 +205,46 @@ const SORTERS = {
   discount: (x, y) => discount(y.p) - discount(x.p),
 };
 
-export function getResults(items, crit, filters, sort) {
+// ——— Тип товара ———
+// Поиск магазина приводит слова к основе: «брючный костюм» находит брюки. Поэтому тип товара
+// определяем по названию и отсеиваем товары другого типа. Синонимы — в одной группе.
+const TYPE_GROUPS = [
+  ['костюм', /^костюм/], ['брюки', /^брюк(и|ах|ами|ов)?$/], ['джинсы', /^джинс(ы|ах|ов)?$/], ['юбка', /^юбк/],
+  ['платье', /^плать/], ['жакет', /^(жакет|пиджак|блейзер)/], ['жилет', /^жилет/], ['блузка', /^блуз/], ['рубашка', /^рубаш/],
+  ['футболка', /^(футболк|лонгслив)/], ['топ', /^топ(ы|ик)?$/], ['свитер', /^(свитер|джемпер|пуловер)/], ['кардиган', /^кардиган/],
+  ['худи', /^(худи|толстовк|свитшот)/], ['пальто', /^пальт/], ['куртка', /^(куртк|бомбер|ветровк|парк[аи]$)/], ['пуховик', /^пуховик/],
+  ['тренч', /^(тренч|плащ)/], ['шорты', /^шорт/], ['комбинезон', /^комбинезон/], ['водолазка', /^водолазк/],
+  ['сумка', /^(сумк|сумоч|клатч|шоппер)/], ['рюкзак', /^рюкзак/], ['кошелёк', /^(кошел|портмоне|бумажник|картхолдер)/],
+  ['ремень', /^(ремень|ремн|пояс$)/], ['шарф', /^(шарф|платок|палантин)/],
+  ['лоферы', /^лофер/], ['ботильоны', /^ботильон/], ['ботинки', /^ботин/], ['кеды', /^кед/], ['кроссовки', /^кроссовк/],
+  ['туфли', /^туфл/], ['сапоги', /^сапог/], ['мокасины', /^мокасин/], ['босоножки', /^босонож/], ['сандалии', /^сандал/],
+  ['балетки', /^балетк/], ['мюли', /^мюли/], ['сабо', /^сабо$/],
+];
+/** Типы товара, упомянутые в тексте: «Брючный костюм» → ['костюм'] («брючный» — не брюки). */
+export function detectTypes(text) {
+  const words = norm(String(text || '')).split(/[^a-zа-я0-9]+/).filter(Boolean);
+  const out = [];
+  for (const [name, re] of TYPE_GROUPS) if (words.some((w) => re.test(w)) && !out.includes(name)) out.push(name);
+  return out;
+}
+/** Прилагательные, которые поиск магазина путает с другим товаром: «брючный» → брюки. */
+export const CONFUSING_ADJ = /(^|[\s,])(брючн|юбочн|джинсов|пальтов|платьев|рубашечн|курточ|жакетн)[а-яё]*(?=[\s,]|$)/i;
+
+/**
+ * opts.types — типы товара из запроса; товары с другим типом в названии не входят в выдачу
+ * (возвращаются в hidden), если не задано opts.showOther.
+ */
+export function getResults(items, crit, filters, sort, opts = {}) {
   const sorter = SORTERS[sort] || SORTERS.match;
-  const base = baseProducts(items, crit).map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
+  const types = opts.types || [];
+  let pool = baseProducts(items, crit);
+  let hidden = [];
+  if (types.length) {
+    const other = (p) => { const t = detectTypes(p.title); return t.length > 0 && !t.some((x) => types.includes(x)); };
+    hidden = pool.filter(other);
+    if (!opts.showOther) pool = pool.filter((p) => !other(p));
+  }
+  const base = pool.map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
   const f = filters;
   const list = base.filter(({ p }) =>
     (!f.stores.length || f.stores.includes(p.store)) &&
@@ -216,7 +253,8 @@ export function getResults(items, crit, filters, sort) {
     (!f.colors.length || f.colors.includes(p.color)) &&
     (!f.min || p.price >= +f.min) &&
     (!f.max || p.price <= +f.max));
-  return { base, list };
+  const hiddenTypes = [...new Set(hidden.flatMap((p) => detectTypes(p.title)))];
+  return { base, list, hidden: hidden.length, hiddenTypes };
 }
 
 /** Чипы с параметрами поиска для шапки результатов и «Моих поисков». */
