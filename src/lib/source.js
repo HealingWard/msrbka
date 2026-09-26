@@ -35,7 +35,9 @@ export function storeQueries(run) {
   const GENDER = /^(женск|мужск|детск|девоч|мальч|унисекс)/i;
   // «Для кого» из настройки, если в тексте запроса пол не указан: так магазин сразу ищет в нужном разделе.
   const GENDER_WORD = { women: 'женские', men: 'мужские', girls: 'для девочек', boys: 'для мальчиков', kids: 'детские' };
-  if (run.crit.gender && !q.split(/[\s,]+/).some((w) => GENDER.test(w)) && GENDER_WORD[run.crit.gender]) q += ' ' + GENDER_WORD[run.crit.gender];
+  // Только для одежды и обуви: «чемодан женские» магазин не находит — там пол отсеивает сам «Прицел».
+  const wearable = !run.ds || run.ds === 'trench' || run.ds === 'shoes';
+  if (wearable && run.crit.gender && !q.split(/[\s,]+/).some((w) => GENDER.test(w)) && GENDER_WORD[run.crit.gender]) q += ' ' + GENDER_WORD[run.crit.gender];
   // «женские» и единственный цвет относятся ко всем вариантам, даже если написаны один раз.
   const shared = q.split(/[\s,]+/).filter((w) => GENDER.test(w) || detectColors(w).length);
   const brands = run.crit.brands || [];

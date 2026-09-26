@@ -47,8 +47,8 @@ export function Home() {
     const q = query.trim();
     if (!q) return;
     const p = parseQuery(q, cats);
-    // «Для кого» к товарам для дома не относится.
-    const gender = p.ds === 'home' ? null : p.gender || (prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
+    // «Для кого» к товарам для дома не относится; к нераспознанным («прочее») — только если сказано в запросе.
+    const gender = p.ds === 'home' ? null : p.gender || (p.ds !== 'other' && prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
     const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget, ...(gender ? { gender } : {}) };
     let missing = missingCriteria(crit, p.ds);
     if (!prefs.askClarify) missing = crit.size || !sizeRequired(p.ds) ? [] : ['size'];
