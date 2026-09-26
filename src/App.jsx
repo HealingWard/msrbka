@@ -9,6 +9,7 @@ import { Home } from './screens/Home.jsx';
 import { Product } from './screens/Product.jsx';
 import { Results } from './screens/Results.jsx';
 import { Searches } from './screens/Searches.jsx';
+import { ExtensionPage } from './screens/ExtensionPage.jsx';
 import { useApp } from './state.jsx';
 
 function Header({ section }) {
@@ -64,6 +65,7 @@ export function App() {
     screen = <Product key={productId} id={productId} from={from} />;
   } else if (path === '/searches') { screen = <Searches />; section = 'searches'; }
   else if (path === '/favorites') { screen = <Favorites />; section = 'favorites'; }
+  else if (path === '/extension') { screen = <ExtensionPage />; title = 'Расширение для Chrome'; }
 
   const found = !!screen;
   useEffect(() => {
@@ -80,7 +82,7 @@ export function App() {
       {screen}
       <footer className="footer">
         {isLive()
-          ? 'Прицел · поиск товаров в Яндекс Маркете, Lamoda и Stockmann. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки. Поиски и избранное хранятся в этом браузере.'
+          ? <>Прицел · поиск товаров в Stockmann, Lamoda и Яндекс Маркете. Stockmann и Lamoda — через <a href="#/extension" className="underline">расширение для Chrome</a>. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки.</>
           : 'Прицел · демо-режим: каталог и история цен — демонстрационные данные, кнопки «Открыть в магазине» ведут на поиск по названию. Подключите сервер поиска (server/), чтобы искать настоящие товары. Поиски и избранное хранятся в этом браузере.'}
       </footer>
       <Toast message={app.toast} onDone={app.clearToast} />

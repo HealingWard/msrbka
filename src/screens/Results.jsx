@@ -9,10 +9,17 @@ import { ProductCard, ProductTable } from '../components/ProductCard.jsx';
 import { CheckRow, Segmented, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
-const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка', empty: 'товары не распознаны' };
-const NOTE_PREFIX = { blocked: 'не удалось получить выдачу: ', empty: '', error: 'ошибка: ' };
+const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка', empty: 'товары не распознаны', noext: 'нужно расширение' };
+const NOTE_PREFIX = { blocked: 'не удалось получить выдачу: ', empty: '', error: 'ошибка: ', noext: '' };
 
-function Loading({ run, entry }) {
+function progressText(p) {
+  if (!p) return 'ищу…';
+  if (p.stage === 'human') return 'магазин просит проверку «не робот» — пройдите её в окне браузера';
+  if (p.stage === 'details') return 'нашёл ' + p.found + ' · смотрю размеры и цвет ' + p.done + '/' + p.total;
+  return 'открываю выдачу…';
+}
+
+function Loading({ run, entry, progress }) {
   const stores = entry?.stores || {};
   return (
     <div className="page loading" aria-live="polite">
@@ -22,14 +29,16 @@ function Loading({ run, entry }) {
         const r = stores[name];
         const status = r
           ? r.status === 'ok' ? 'готово · ' + countStr(r.items.length, PRODUCTS_F) : STATUS_TEXT[r.status] || r.status
-          : 'ищу…';
+          : progressText(progress[name]);
+        const pr = progress[name];
+        const width = r ? '100%' : pr && pr.stage === 'details' && pr.total ? 30 + (70 * pr.done) / pr.total + '%' : '30%';
         return (
           <div key={name} className="load-row">
             <div className="top">
               <span>{name}</span>
               <span className={'status' + (r ? (r.status === 'ok' ? ' done' : ' fail') : '')}>{status}</span>
             </div>
-            <div className="bar"><i style={{ width: r ? '100%' : '60%' }} /></div>
+            <div className="bar"><i style={{ width }} /></div>
           </div>
         );
       })}
@@ -116,6 +125,7 @@ export function Results({ run }) {
   const [sort, setSort] = useState('match');
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [progress, setProgress] = useState({});
 
   const entry = app.results[key];
   const missing = run.stores.filter((n) => !entry?.stores?.[n]);
@@ -128,7 +138,7 @@ export function Results({ run }) {
     if (!missingKey) return undefined;
     const ctrl = new AbortController();
     missingKey.split('|').forEach((name, i) => {
-      searchOne(run, name, ctrl.signal, i)
+      searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); })
         .then((res) => { if (!ctrl.signal.aborted) setStoreResult(key, name, res); })
         .catch(() => { /* отменено */ });
     });
@@ -154,7 +164,7 @@ export function Results({ run }) {
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
   const { base, list } = useMemo(() => getResults(items, run.crit, f, sort), [items, run.crit, f, sort]);
 
-  if (loading) return <Loading run={run} entry={entry} />;
+  if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
   const checked = whenStr(entry.at);
   const failed = run.stores.map((n) => ({ name: n, ...entry.stores[n] })).filter((r) => r.status !== 'ok');
@@ -199,7 +209,9 @@ export function Results({ run }) {
                 <div key={r.name} className="store-note" role="status">
                   <b>{r.name}</b>
                   <span>{NOTE_PREFIX[r.status] ?? 'ошибка: '}{r.error || 'неизвестная ошибка'}</span>
-                  <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>
+                  {r.status === 'noext'
+                    ? <a href="#/extension">Установить расширение →</a>
+                    : <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>}
                 </div>
               ))}
             </div>

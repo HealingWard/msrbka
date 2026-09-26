@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { STORE_NAMES } from './data/catalog.js';
 import { usePersistentState } from './lib/storage.js';
 import { navigate } from './lib/router.js';
@@ -32,7 +32,7 @@ const MAX_CACHED_RUNS = 4;
 const seedColls = () => [
   { id: 'c1', name: 'Тренч на осень' }, { id: 'c2', name: 'Обувь' }, { id: 'c3', name: 'Подарки' },
 ];
-const seedPrefs = () => ({ selStores: [], selBrands: [], cats: ['Одежда'], view: 'grid', askClarify: true });
+const seedPrefs = () => ({ selStores: ['Stockmann', 'Lamoda'], selBrands: [], cats: ['Одежда'], view: 'grid', askClarify: true, v: 2 });
 
 const AppContext = createContext(null);
 
@@ -49,6 +49,11 @@ export function AppProvider({ children }) {
   const [toast, setToast] = useState(null);
   const notify = useCallback((msg) => setToast(msg), []);
   const clearToast = useCallback(() => setToast(null), []);
+
+  // Переход на приоритет Stockmann и Lamoda: по умолчанию ищем в них, Яндекс Маркет — по желанию.
+  useEffect(() => {
+    if (!prefs.v) setPrefs((p) => ({ ...p, selStores: ['Stockmann', 'Lamoda'], v: 2 }));
+  }, [prefs.v, setPrefs]);
 
   const setPref = useCallback((k, v) => setPrefs((p) => ({ ...p, [k]: typeof v === 'function' ? v(p[k]) : v })), [setPrefs]);
 

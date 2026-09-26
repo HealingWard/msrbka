@@ -100,7 +100,8 @@ function fromLdProduct(n, base) {
   const offer = offers.find((o) => o && (o.price != null || o.lowPrice != null)) || offers[0] || {};
   const price = parsePrice(offer.price ?? offer.lowPrice ?? offer.priceSpecification?.price);
   const old = parsePrice(offer.highPrice && offer.lowPrice && offer.highPrice !== offer.lowPrice ? null : offer.priceSpecification?.referencePrice) || null;
-  const avail = String(offer.availability || '');
+  const avails = offers.map((o) => String(o?.availability || '')).filter(Boolean);
+  const avail = avails.find((a) => !/OutOfStock|SoldOut|Discontinued/i.test(a)) || avails[0] || '';
   const rating = n.aggregateRating || {};
   return {
     url: absUrl(n.url || offer.url || n['@id'], base),
