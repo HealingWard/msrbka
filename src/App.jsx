@@ -21,9 +21,9 @@ function Header({ section }) {
   ];
   return (
     <header className="header">
-      <a className="logo" href="#/" aria-label="Прицел — на главную">
+      <a className="logo" href="#/" aria-label="Отмерь — на главную">
         <span className="logo-mark"><i /></span>
-        <span className="logo-text">Прицел</span>
+        <span className="logo-text">Отмерь</span>
       </a>
       <nav className="nav" aria-label="Разделы">
         {nav.map(([k, href, label, count]) => (
@@ -73,7 +73,7 @@ export function App() {
   }, [found]);
 
   useEffect(() => {
-    document.title = (title ? title + ' — ' : TITLES[section] !== 'Поиск' ? TITLES[section] + ' — ' : '') + 'Прицел';
+    document.title = (title ? title + ' — ' : TITLES[section] !== 'Поиск' ? TITLES[section] + ' — ' : '') + 'Отмерь';
   }, [title, section]);
 
   return (
@@ -82,8 +82,8 @@ export function App() {
       {screen}
       <footer className="footer">
         {isLive()
-          ? <>Прицел · поиск товаров в Stockmann, Lamoda и Яндекс Маркете. Stockmann и Lamoda — через <a href="#/extension" className="underline">расширение для Chrome</a>. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки.</>
-          : 'Прицел · демо-режим: каталог и история цен — демонстрационные данные, кнопки «Открыть в магазине» ведут на поиск по названию. Подключите сервер поиска (server/), чтобы искать настоящие товары. Поиски и избранное хранятся в этом браузере.'}
+          ? <>Отмерь · поиск товаров в Stockmann, Lamoda и Яндекс Маркете. Stockmann и Lamoda — через <a href="#/extension" className="underline">расширение для Chrome</a>. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки.</>
+          : 'Отмерь · демо-режим: каталог и история цен — демонстрационные данные, кнопки «Открыть в магазине» ведут на поиск по названию. Подключите сервер поиска (server/), чтобы искать настоящие товары. Поиски и избранное хранятся в этом браузере.'}
       </footer>
       <Toast message={app.toast} onDone={app.clearToast} />
     </>

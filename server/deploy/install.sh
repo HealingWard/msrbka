@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Установка сервера поиска «Прицела» на чистый VPS (Ubuntu/Debian), одной командой от root:
+# Установка сервера поиска «Отмерь» на чистый VPS (Ubuntu/Debian), одной командой от root:
 #   curl -fsSL https://raw.githubusercontent.com/HealingWard/msrbka/main/server/deploy/install.sh | bash
 # Свой домен (необязательно):  ... | bash -s -- api.example.ru
 # Повторный запуск обновляет код и перезапускает сервер.
@@ -57,7 +57,7 @@ fi
 setcap cap_net_bind_service=+ep "$(command -v caddy)"
 caddy version
 
-say "Код «Прицела»"
+say "Код «Отмерь»"
 id pricel >/dev/null 2>&1 || useradd --system --home "$DATA_DIR" --shell /usr/sbin/nologin pricel
 mkdir -p "$DATA_DIR" && chown pricel:pricel "$DATA_DIR"
 if [ -d "$APP_DIR/.git" ]; then

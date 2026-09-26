@@ -43,7 +43,9 @@ describe('parseQuery', () => {
   });
   it('берёт тип из категорий, если в запросе его нет', () => {
     expect(parseQuery('что-нибудь белое', ['Обувь']).ds).toBe('shoes');
-    expect(parseQuery('что-нибудь белое', ['Одежда']).ds).toBe('trench');
+    // Нераспознанный товар — «прочее»: размер одежды не требуется.
+    expect(parseQuery('что-нибудь белое', ['Одежда']).ds).toBe('other');
+    expect(parseQuery('что-нибудь белое M', ['Одежда']).ds).toBe('trench');
   });
 });
 
@@ -62,7 +64,8 @@ describe('matchProduct', () => {
 
 describe('missingCriteria', () => {
   it('перечисляет не указанные параметры', () => {
-    expect(missingCriteria({ brands: [], size: null, color: null, budget: 1 })).toEqual(['size', 'brand', 'color']);
+    expect(missingCriteria({ brands: [], size: null, color: null, budget: 1 }, 'trench')).toEqual(['size', 'brand', 'color']);
+    expect(missingCriteria({ brands: [], size: null, color: null, budget: 1 }, 'other')).toEqual(['brand', 'color']);
   });
 });
 
@@ -252,6 +255,19 @@ describe('для кого', () => {
     expect(parseQuery('тренч до 40 000').size).toBe(null);
     expect(storeQueries({ q: 'лоферы 40', crit: { brands: [], gender: 'women', size: '40' } })).toEqual(['лоферы женские']);
     expect(storeQueries({ q: 'лоферы мужские 43', crit: { brands: [], gender: 'men', size: '43' } })).toEqual(['лоферы мужские']);
+  });
+});
+
+describe('без размера одежды', () => {
+  it('чемодан и нераспознанные товары ищутся без размера', () => {
+    expect(parseQuery('чемодан').ds).toBe('acc');
+    expect(parseQuery('чемодан на колесах 55 см').size).toBe(null);
+    expect(parseQuery('наушники').ds).toBe('other');
+    expect(missingCriteria({ brands: [], size: null }, parseQuery('наушники').ds)).not.toContain('size');
+    expect(parseQuery('лонгслив белый').ds).toBe('trench');
+    expect(parseQuery('вечернее платье').ds).toBe('trench');
+    expect(storeQueries({ q: 'чемодан', ds: 'acc', crit: { brands: [], gender: 'women' } })).toEqual(['чемодан']);
+    expect(storeQueries({ q: 'лоферы', ds: 'shoes', crit: { brands: [], gender: 'women' } })).toEqual(['лоферы женские']);
   });
 });
 

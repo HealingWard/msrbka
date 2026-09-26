@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Пробный запуск браузера на сервере: пускают ли Stockmann и Lamoda обычный Chromium.
-# Ничего не меняет в работающем сервере «Прицела»; всё ставится во временную папку /opt/pricel-probe.
+# Ничего не меняет в работающем сервере «Отмерь»; всё ставится во временную папку /opt/pricel-probe.
 #   curl -fsSL https://raw.githubusercontent.com/HealingWard/msrbka/claude/happy-faraday-s7rzl8/server/deploy/browser-probe.sh | bash
 set -euo pipefail
 REF="${PRICEL_REF:-claude/happy-faraday-s7rzl8}"
