@@ -63,7 +63,7 @@ export function parseQuery(q, cats = []) {
   const brands = detectBrands(q);
 
   let ds = 'trench';
-  if (/кед|кросс|обув|ботин|туфл/.test(low)) ds = 'shoes';
+  if (/кед|кросс|обув|ботин|ботильон|туфл|лофер|мокасин|сапог|сандал|босонож|балетк|мюли|слипон|оксфорд|дерби|челси|сабо|шлепанц|шлёпанц|эспадриль|тапоч|угги/.test(low)) ds = 'shoes';
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.includes('Обувь') && !cats.includes('Одежда')) ds = 'shoes';
 
   return { color: colors.length ? colors : null, size, budget, brands, ds };
