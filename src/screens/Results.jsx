@@ -9,7 +9,8 @@ import { ProductCard, ProductTable } from '../components/ProductCard.jsx';
 import { CheckRow, Segmented, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
-const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка' };
+const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка', empty: 'товары не распознаны' };
+const NOTE_PREFIX = { blocked: 'не удалось получить выдачу: ', empty: '', error: 'ошибка: ' };
 
 function Loading({ run, entry }) {
   const stores = entry?.stores || {};
@@ -197,7 +198,7 @@ export function Results({ run }) {
               {failed.map((r) => (
                 <div key={r.name} className="store-note" role="status">
                   <b>{r.name}</b>
-                  <span>{r.status === 'blocked' ? 'не удалось получить выдачу: ' : 'ошибка: '}{r.error || 'неизвестная ошибка'}</span>
+                  <span>{NOTE_PREFIX[r.status] ?? 'ошибка: '}{r.error || 'неизвестная ошибка'}</span>
                   <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>
                 </div>
               ))}

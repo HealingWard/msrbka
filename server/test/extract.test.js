@@ -85,3 +85,13 @@ test('storeForUrl принимает только карточки товаро�
   assert.equal(storeForUrl('https://www.lamoda.ru/c/355/'), null);
   assert.equal(storeForUrl('http://169.254.169.254/p/abcdef12/'), null);
 });
+
+test('название из schema.org важнее подписей в карточке; служебный текст не становится названием', () => {
+  const { items } = extractListing(fx('market-like.html'), 'https://market.yandex.ru/search?text=x', STORES.market);
+  const a = items.find((x) => x.url.includes('4927342664'));
+  assert.equal(a.title, 'Тренч с поясом');
+  assert.equal(a.image, 'https://avatars.mds.yandex.net/x.jpg');
+  const b = items.find((x) => x.url.includes('6199948627'));
+  assert.equal(b.title, 'Тренч женский двубортный');
+  assert.equal(b.price, 4603);
+});

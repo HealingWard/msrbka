@@ -268,6 +268,15 @@ export function productsFromJson(blobs, base) {
 
 // ——— 3. DOM-карточки ———
 
+// Служебные подписи в карточках, которые не являются названием товара.
+const NOISE_RE = /(цена с картой|цена со скидкой|с картой|вместо|в корзину|купить|рассрочк|кешбэк|кэшбэк|баллами|доставка|осталось|хит продаж|новинка|скидка|отзыв)/i;
+
+function cleanTitle(s) {
+  const t = clean(s.replace(PRICE_RE, ' ').replace(/[−-]\s?\d{1,2}\s?%/g, ' '));
+  if (t.length < 3 || NOISE_RE.test(t) || !/[a-zа-яё]{3}/i.test(t)) return '';
+  return t;
+}
+
 /** Текст узла с пробелами между элементами (textContent склеивает «12 Storeez» и «Тренч» в одно слово). */
 function textOf(node) {
   const parts = [];
@@ -314,20 +323,22 @@ export function extractDomCards(root, base, productPath) {
     const maxP = Math.max(...prices);
     const img = card.querySelector('img');
     const imgSrc = img && (img.getAttribute('src') || img.getAttribute('data-src') || (img.getAttribute('srcset') || '').split(/[\s,]+/)[0]);
-    const title = clean(a.getAttribute('title') || textOf(a) || (img && img.getAttribute('alt')) || '');
+    const title = [a.getAttribute('title'), textOf(a), img && img.getAttribute('alt')].map((x) => cleanTitle(x || '')).find(Boolean) || '';
     const prev = byUrl.get(key);
     const item = {
       url,
-      title: title.length >= 3 ? title.replace(PRICE_RE, '').trim() : clean(img?.getAttribute('alt') || ''),
+      title,
       brand: '',
       price,
       old: maxP > price && maxP < price * 5 ? maxP : null,
       image: absUrl(imgSrc && !imgSrc.startsWith('data:') ? imgSrc : null, base),
       cardText: cardText.slice(0, 400),
     };
+    // Внутри карточки у одной ссылки бывает картинка, у другой — полное название: берём более полное.
+    if (prev && item.title.length > prev.title.length && item.title.length < 200) prev.title = item.title;
     byUrl.set(key, prev ? merge(prev, item) : item);
   }
-  return [...byUrl.values()].filter((x) => x.title && x.price);
+  return [...byUrl.values()].filter((x) => x.price);
 }
 
 // ——— объединение ———
@@ -336,8 +347,8 @@ function merge(a, b) {
   const out = { ...a };
   for (const [k, v] of Object.entries(b)) {
     const cur = out[k];
+    // Первое непустое значение побеждает: источники идут от надёжных (JSON-LD) к запасным (текст карточки).
     if (cur == null || cur === '' || (Array.isArray(cur) && !cur.length)) out[k] = v;
-    else if (k === 'title' && typeof v === 'string' && v.length > cur.length && v.length < 200) out[k] = v;
   }
   return out;
 }
@@ -347,10 +358,11 @@ export function mergeItems(lists) {
   const order = [];
   for (const list of lists) {
     for (const it of list) {
-      if (!it || !it.url || !it.price || !it.title) continue;
+      if (!it || !it.url || !it.price) continue;
       const key = urlKey(it.url);
       if (byKey.has(key)) byKey.set(key, merge(byKey.get(key), it));
-      else { byKey.set(key, it); order.push(key); }
+      // Карточка без распознанного названия может только дополнить уже найденный товар (фото, старая цена).
+      else if (it.title) { byKey.set(key, it); order.push(key); }
     }
   }
   return order.map((k) => byKey.get(k));
