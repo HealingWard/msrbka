@@ -14,6 +14,10 @@ const NOTE_PREFIX = { blocked: 'не удалось получить выдач�
 
 function progressText(p) {
   if (!p) return 'ищу…';
+  const pre = p.part ? '«' + p.query + '» (' + p.part + '/' + p.parts + ') · ' : '';
+  return pre + progressStage(p);
+}
+function progressStage(p) {
   if (p.stage === 'human') return 'магазин просит проверку «не робот» — пройдите её в окне браузера';
   if (p.stage === 'details') return 'нашёл ' + p.found + ' · смотрю размеры и цвет ' + p.done + '/' + p.total;
   if (p.stage === 'search' && p.page) return 'страница ' + p.page + ' · собрано ' + p.found + (p.total ? ' из ' + p.total : '');

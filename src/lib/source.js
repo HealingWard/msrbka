@@ -11,26 +11,51 @@ const DAY = 86400000;
 const STORE_IDS = { 'Яндекс Маркет': 'market', Lamoda: 'lamoda', Stockmann: 'stockmann' };
 export const NOEXT_ERROR = 'поиск в этом магазине идёт через расширение «Прицел» для Chrome — установите его';
 
-/** Текст запроса для магазина: без бюджета и размера, с брендом, если он выбран отдельно. */
-export function storeQuery(run) {
+/**
+ * Запросы для поиска в магазине. Бюджет и размер убираются (их фильтрует «Прицел»),
+ * несколько цветов — тоже; альтернативы через «или» («ботильоны или ботинки») становятся
+ * отдельными запросами: поиск магазина ищет товары со всеми словами сразу.
+ */
+export function storeQueries(run) {
   let q = ' ' + run.q + ' ';
   // \b в JS не работает с кириллицей, поэтому границы слов задаём явно.
   q = q.replace(/(^|[\s,])до\s*\d[\d\s]*(?:к|тыс\.?)?\s*(?:₽|руб\.?|р\.)?(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])\d{2}\s*-?\s*(?:й\s*)?размер[а-я]*(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])размер[а-я]*\s*\d{2}(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])(?:xxs|xs|s|m|l|xl|xxl)(?=[\s,]|$)/gi, ' ');
-  // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — отправляем суть запроса,
-  // а цвета фильтрует сам «Прицел». Один цвет оставляем: он хорошо сужает выдачу магазина.
+  // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — их фильтрует «Прицел».
+  // Один цвет оставляем: он хорошо сужает выдачу магазина.
   if ([].concat(run.crit.color || []).length > 1) {
-    q = q.replace(/(^|[\s,])(?:и|или|либо|цвет[а-я]*)(?=[\s,]|$)/gi, ' ');
+    q = q.replace(/(^|[\s,])цвет[а-я]*(?=[\s,]|$)/gi, ' ');
     q = q.split(/\s+/).filter((w) => !detectColors(w).length).join(' ');
   }
-  q = q.replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const GENDER = /^(женск|мужск|детск|девоч|мальч|унисекс)/i;
+  // «женские» и единственный цвет относятся ко всем вариантам, даже если написаны один раз.
+  const shared = q.split(/[\s,]+/).filter((w) => GENDER.test(w) || detectColors(w).length);
   const brands = run.crit.brands || [];
-  if (brands.length === 1 && !q.toLowerCase().includes(brands[0].toLowerCase())) q = brands[0] + ' ' + q;
-  if (run.crit.color && !/[а-я]/i.test(q)) q += ' ' + [].concat(run.crit.color)[0];
-  return q || run.q;
+  const parts = q
+    .split(/(?:^|[\s,])(?:или|либо)(?=[\s,]|$)|[/;]/i)
+    .map((x) => x.replace(/(^|[\s,])и(?=[\s,]|$)/gi, ' ').replace(/[,]+/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter((x) => /[a-zа-яё]{3}/i.test(x))
+    .map((x) => {
+      let part = x;
+      for (const w of shared) {
+        const isColor = detectColors(w).length > 0;
+        const has = part.split(/\s+/).some((t) => (isColor ? detectColors(t).length > 0 : t.toLowerCase() === w.toLowerCase()));
+        if (!has) part = isColor ? w + ' ' + part : part + ' ' + w;
+      }
+      if (brands.length === 1 && !part.toLowerCase().includes(brands[0].toLowerCase())) part = brands[0] + ' ' + part;
+      return part;
+    });
+  const uniq = [...new Set(parts.map((x) => x.toLowerCase()))].map((l) => parts.find((x) => x.toLowerCase() === l));
+  if (!uniq.length) {
+    const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();
+    return [fallback || (run.crit.color ? [].concat(run.crit.color)[0] : run.q)];
+  }
+  return uniq.slice(0, 3);
 }
+
+export const storeQuery = (run) => storeQueries(run)[0];
 
 async function getJson(path, signal) {
   const r = await fetch(apiUrl() + path, { signal });
@@ -62,17 +87,30 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
   const store = storeByName(storeName);
   const q = storeQuery(run);
   if (isLive() && store.ext) {
-    const searchUrl = store.search + encodeURIComponent(q);
+    const queries = storeQueries(run);
+    const searchUrl = store.search + encodeURIComponent(queries[0]);
     if (!(await extensionVersion())) return { status: 'noext', items: [], error: NOEXT_ERROR, searchUrl };
-    try {
-      const r = await extSearch(store.id, q, { onProgress, signal });
-      const items = (r.items || []).filter((x) => x.url && x.price && x.title).map(extItem(storeName));
-      recordPrices(items);
-      return { status: r.status, items, error: r.error || null, searchUrl: r.searchUrl || searchUrl };
-    } catch (e) {
-      if (e.name === 'AbortError') throw e;
-      return { status: 'error', items: [], error: e.message, searchUrl };
+    const byUrl = new Map();
+    const statuses = [];
+    for (let i = 0; i < queries.length; i++) {
+      try {
+        const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i] });
+        const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, limit: Math.floor(150 / queries.length) });
+        statuses.push(r);
+        for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        statuses.push({ status: 'error', error: e.message });
+      }
     }
+    const items = [...byUrl.values()].map(extItem(storeName));
+    recordPrices(items);
+    const ok = statuses.some((r) => r.status === 'ok');
+    const first = statuses.find((r) => r.status !== 'ok') || statuses[0] || {};
+    return {
+      status: ok ? 'ok' : first.status || 'error', items, error: ok ? null : first.error || null,
+      searchUrl: statuses[0]?.searchUrl || searchUrl, queries,
+    };
   }
   if (!isLive()) {
     await sleep(450 * (index + 1), signal);

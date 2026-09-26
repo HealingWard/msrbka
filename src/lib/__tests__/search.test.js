@@ -4,7 +4,7 @@ import { columnLetter, exportRows, toCSV } from '../export.js';
 import { plural, rub } from '../format.js';
 import { getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams } from '../search.js';
 import { DEMO_ITEMS, liveItem } from '../items.js';
-import { storeQuery } from '../source.js';
+import { storeQuery, storeQueries } from '../source.js';
 import { historyStats, priceAt } from '../history.js';
 
 describe('parseQuery', () => {
@@ -115,6 +115,13 @@ describe('живые товары', () => {
     expect(storeQuery({ q: 'чёрный тренч 12 Storeez S до 30 000', crit: { brands: ['12 Storeez'] } })).toBe('чёрный тренч 12 Storeez');
     expect(storeQuery({ q: 'тренч M', crit: { brands: ['Mango'] } })).toBe('Mango тренч');
     expect(storeQuery({ q: 'лоферы женские 40 размер черные или коричневые', crit: { brands: [], color: ['чёрный', 'коричневый'] } })).toBe('лоферы женские');
+  });
+  it('«или» — отдельные запросы в магазин, пол добавляется к каждому', () => {
+    expect(storeQueries({ q: 'Ботильоны или городские ботинки женские 40 размер черные или коричневые', crit: { brands: [], color: ['чёрный', 'коричневый'] } }))
+      .toEqual(['Ботильоны женские', 'городские ботинки женские']);
+    expect(storeQueries({ q: 'тренч или плащ M', crit: { brands: [] } })).toEqual(['тренч', 'плащ']);
+    expect(storeQueries({ q: 'бежевый тренч или плащ L', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч', 'бежевый плащ']);
+    expect(storeQueries({ q: 'бежевый тренч до 25 000', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч']);
   });
   it('бренд и цвет берутся из названия, если магазин их не дал', () => {
     const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'https://www.lamoda.ru/p/x/', title: 'Тренч Gerry Weber бежевого цвета', price: 18990, inStock: true });
