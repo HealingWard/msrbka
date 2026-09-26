@@ -55,6 +55,20 @@ npm run probe -- url https://www.lamoda.ru/p/…/   # разбор конкре�
 
 ## Размещение
 
+### Быстро: одна команда на чистом VPS
+
+На сервере с Ubuntu или Debian от имени root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HealingWard/msrbka/main/server/deploy/install.sh | bash
+```
+
+Скрипт `deploy/install.sh` ставит Node.js и Caddy, скачивает код, запускает сервер как службу `pricel`,
+выпускает HTTPS-сертификат для адреса вида `1-2-3-4.sslip.io` (или для вашего домена: `… | bash -s -- api.example.ru`),
+проверяет магазины и печатает адрес API. Повторный запуск обновляет сервер до свежей версии из `main`.
+
+### Вручную через Docker
+
 Сайт на GitHub Pages работает по HTTPS, поэтому и серверу нужен HTTPS-адрес.
 Лучше всего брать VPS в России (Timeweb Cloud, Selectel, REG.RU и т. п., от ~200 ₽/мес):
 с российских адресов магазины реже включают защиту от роботов.
