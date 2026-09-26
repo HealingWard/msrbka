@@ -388,6 +388,37 @@
     return it;
   }
 
+  // Stockmann отдаёт картинки только своим страницам (защита требует cookie, которые браузер не шлёт
+  // для картинок на чужом сайте). Поэтому скачиваем уменьшенное фото здесь, на странице магазина,
+  // и передаём сайту как data:-URL. Если не вышло — оставляем обычную ссылку.
+  async function inlineImages(items, max = 60) {
+    const host = location.hostname.replace(/^www\./, '');
+    if (!host.endsWith('stockmann.ru')) return items;
+    const small = (u) => u.replace('/pi/bx2/', '/pi/b/').replace('/pi/ppx2/', '/pi/b/').replace('/pi/pp/', '/pi/b/');
+    const toData = async (url) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const r = await fetch(url, { credentials: 'include', signal: ctrl.signal });
+        const type = r.headers.get('content-type') || '';
+        if (!r.ok || !type.startsWith('image/')) return null;
+        const blob = await r.blob();
+        if (blob.size > 400000) return null;
+        return await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(blob); });
+      } catch { return null; } finally { clearTimeout(t); }
+    };
+    const queue = items.filter((x) => x.image && !x.image.startsWith('data:')).slice(0, max);
+    const worker = async () => {
+      while (queue.length) {
+        const it = queue.shift();
+        const data = (await toData(small(it.image))) || (await toData(it.image));
+        if (data) { it.image = data; it.images = [data]; }
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    return items;
+  }
+
   function storeExtract(mode) {
     const h = location.hostname.replace(/^www\./, '');
     try {
@@ -425,7 +456,7 @@
       }, opts.timeoutMs || 25000);
       if (ready && ready.blocked) return { blocked: ready.blocked, items: [], url: location.href, title: document.title };
       const exact = storeExtract('search');
-      if (exact && exact.length) return { blocked: null, items: exact, source: 'store', url: location.href, title: document.title };
+      if (exact && exact.length) return { blocked: null, items: await inlineImages(exact), source: 'store', url: location.href, title: document.title };
       await sleep(800); // даём догрузиться ценам и картинкам
       window.scrollTo(0, document.body.scrollHeight / 2);
       await sleep(400);
@@ -444,7 +475,7 @@
       const ready = await waitFor(() => blockedState() ? { blocked: blockedState() } : (document.querySelector('h1') ? { ok: 1 } : null), opts.timeoutMs || 20000);
       if (ready && ready.blocked) return { blocked: ready.blocked };
       const exact = storeExtract('product');
-      if (exact && exact.price) return { blocked: null, item: exact, source: 'store' };
+      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact]))[0], source: 'store' };
       await sleep(1000);
       const here = key(location.href);
       const ld = jsonLd();
