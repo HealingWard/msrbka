@@ -72,6 +72,17 @@ test('страница товара: размеры, цвет, фото', () => 
   assert.deepEqual(it.images, ['https://stockmann.ru/upload/big1.jpg', 'https://stockmann.ru/upload/big2.jpg']);
 });
 
+test('JS-проверка Servicepipe (Lamoda, Stockmann) распознаётся как блокировка', () => {
+  const small = '<html><head><noscript><meta http-equiv="refresh" content="0; url=/exhkqyad"></noscript></head>'
+    + '<script src="https://abc.servicepipe.tech/loaders/x.js" async></script><body><js-challenge-loader></js-challenge-loader>'
+    + '<script>function get_cookie_spsn() { return "spsn=1_"; }</script></body></html>';
+  assert.equal(looksBlocked(200, small), true);
+  // Stockmann: тот же механизм, но страница ~400 КБ из-за встроенного скрипта
+  const big = '<html><head></head><body><div id="id_spinner"></div><script>' + 'x'.repeat(400000)
+    + '</script><script>function get_cookie_spsn() { return "spsn=1_"; }</script></body></html>';
+  assert.equal(looksBlocked(200, big), true);
+});
+
 test('капча распознаётся как блокировка', () => {
   assert.equal(looksBlocked(200, fx('captcha.html')), true);
   assert.equal(looksBlocked(200, fx('lamoda-like.html')), false);
