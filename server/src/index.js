@@ -16,6 +16,34 @@ import { BlockedError } from './http.js';
 import { PriceHistory } from './history.js';
 import { STORES, fetchProduct, searchStore, storeForUrl } from './stores.js';
 
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > limit) { reject(new Error('too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+/** Проверка записи цены: ссылка на карточку поддерживаемого магазина, id соответствует магазину, разумная цена. */
+export function validRecord(it) {
+  if (!it || typeof it !== 'object' || typeof it.url !== 'string' || typeof it.id !== 'string') return null;
+  const store = storeForUrl(it.url);
+  if (!store || !it.id.startsWith(store.id + ':') || it.id.length > 300) return null;
+  const price = Number(it.price);
+  if (!Number.isFinite(price) || price < 50 || price > 10_000_000) return null;
+  const old = Number(it.old);
+  return {
+    id: it.id, url: it.url, store: store.name, title: String(it.title || '').slice(0, 300),
+    price: Math.round(price), old: Number.isFinite(old) && old > price ? Math.round(old) : null,
+  };
+}
+
 export function createApp({
   history,
   fetchImpl,
@@ -87,13 +115,29 @@ export function createApp({
     };
 
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Max-Age': '86400' } : {});
+      res.writeHead(204, corsOrigin ? {
+        'Access-Control-Allow-Origin': corsOrigin, 'Access-Control-Allow-Methods': 'GET, POST',
+        'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Max-Age': '86400',
+      } : {});
       return res.end();
     }
-    if (req.method !== 'GET') return send(405, { error: 'только GET' });
-
     const u = new URL(req.url, 'http://localhost');
     const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+
+    // Цены, которые расширение увидело в браузере пользователя (Stockmann, Lamoda) — для истории.
+    if (req.method === 'POST' && u.pathname === '/api/record') {
+      if (!limiter.allow(ip)) return send(429, { error: 'слишком много запросов' });
+      let body;
+      try { body = JSON.parse(await readBody(req, 512 * 1024)); } catch (e) { return send(400, { error: e.message === 'too large' ? 'слишком большой запрос' : 'неверный JSON' }); }
+      const now = Date.now();
+      let saved = 0;
+      for (const it of [].concat(body?.items || []).slice(0, 200)) {
+        const rec = validRecord(it);
+        if (rec) { history.record(rec, now); saved++; }
+      }
+      return send(200, { saved });
+    }
+    if (req.method !== 'GET') return send(405, { error: 'только GET и POST /api/record' });
 
     try {
       if (u.pathname === '/api/health') return send(200, { ok: true });

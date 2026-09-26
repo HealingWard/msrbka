@@ -24,6 +24,7 @@ export const STORES = {
     productPath: /^\/p\/[a-z0-9]{6,}\//i,
     isProductUrl: (u) => hostIs('lamoda.ru')(u) && /\/p\/[a-z0-9]{6,}\//i.test(new URL(u).pathname),
     skuFromUrl: (u) => (new URL(u).pathname.match(/\/p\/([a-z0-9]+)\//i) || [])[1]?.toUpperCase() || null,
+    note: 'закрыт защитой от роботов (Servicepipe)',
   },
   stockmann: {
     id: 'stockmann',
@@ -35,6 +36,7 @@ export const STORES = {
     productPath: /^\/(?:product|catalog\/product|p)\/[\w-]*\d{4,}[\w-]*\/?/i,
     isProductUrl: (u) => hostIs('stockmann.ru')(u) && /\/(?:product|p)\//i.test(new URL(u).pathname),
     skuFromUrl: (u) => (new URL(u).pathname.match(/(\d{5,})/) || [])[1] || null,
+    note: 'закрыт защитой от роботов (Servicepipe)',
   },
   market: {
     id: 'market',
@@ -49,8 +51,8 @@ export const STORES = {
       const x = new URL(u);
       return x.searchParams.get('sku') || (x.pathname.match(/\/(\d{4,})(?:\/|$)/) || [])[1] || null;
     },
-    // Маркет чаще всего отвечает капчей на запросы с серверов.
-    note: 'может требовать проверку «не робот»',
+    // Проверено на VPS в РФ: выдача приходит, 8 товаров в серверной разметке страницы.
+    note: null,
   },
 };
 

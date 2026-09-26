@@ -30,6 +30,10 @@ jobs:
       - run: npm ci && npm test
         working-directory: server
       - run: npm run build
+      - name: Pack Chrome extension
+        run: |
+          mkdir -p /tmp/ext && cp -r extension /tmp/ext/pricel-extension
+          (cd /tmp/ext && zip -qr "$GITHUB_WORKSPACE/dist/pricel-extension.zip" pricel-extension)
       - run: touch dist/.nojekyll
       - uses: peaceiris/actions-gh-pages@v4
         with:

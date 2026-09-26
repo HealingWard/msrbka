@@ -20,12 +20,18 @@ const isCaptcha = (html) =>
   // Страница капчи короткая; на обычной выдаче слово «captcha» может встретиться в скриптах.
   html.length < 150000 && CAPTCHA_MARKERS.some((re) => re.test(html));
 
+// JS-проверка антибот-сервисов: вместо выдачи — спиннер и скрипт, который должен выполнить браузер.
+// Так закрыты Lamoda и Stockmann (Servicepipe). Страница может быть большой из-за встроенного скрипта.
+const JS_CHALLENGE_MARKERS = [/servicepipe\.tech/i, /<js-challenge-loader/i, /function get_cookie_spsn\(/];
+const isJsChallenge = (html) => JS_CHALLENGE_MARKERS.some((re) => re.test(html.slice(0, 5000)) || re.test(html.slice(-5000)));
+
 export function looksBlocked(status, html) {
-  return status === 403 || status === 429 || status === 451 || isCaptcha(html);
+  return status === 403 || status === 429 || status === 451 || isJsChallenge(html) || isCaptcha(html);
 }
 
 const blockReason = (status, html) =>
-  isCaptcha(html) ? 'магазин запросил проверку «не робот»'
+  isJsChallenge(html) ? 'сайт закрыт защитой от автоматических запросов (JS-проверка браузера)'
+    : isCaptcha(html) ? 'магазин запросил проверку «не робот»'
     : status === 429 ? 'магазин ограничил частоту запросов (429)'
       : 'магазин отказал в доступе (HTTP ' + status + ')';
 

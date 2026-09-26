@@ -95,9 +95,13 @@ export function matchProduct(p, c = {}) {
       : c.brands.some((b) => lc(b) === lc(p.brand)) ? { s: 'ok', t: 'совпадает — ' + p.brand } : { s: 'no', t: 'другой бренд — ' + p.brand })
     : { s: 'any', t: 'не важен' };
   const sizes = p.sizes || [];
+  const sizesOut = p.sizesOut || [];
   r.size = c.size
-    ? (!sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
-      : sizes.some((z) => lc(z) === lc(c.size)) ? { s: 'ok', t: c.size + ' в наличии' } : { s: 'no', t: 'нет ' + c.size + ', есть ' + sizes.join(', ') })
+    ? (!sizes.length && sizesOut.length ? { s: 'no', t: 'нет в наличии ни одного размера' }
+      : !sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
+      : sizes.some((z) => sizeEq(z, c.size)) ? { s: 'ok', t: c.size + ' в наличии' }
+        : sizes.some((z) => sizeNear(z, c.size)) ? { s: 'near', t: 'есть ' + sizes.filter((z) => sizeNear(z, c.size)).join(', ') + ' ≈ ' + c.size }
+          : { s: 'no', t: 'нет ' + c.size + ', есть ' + sizes.join(', ') })
     : { s: 'any', t: 'не указан' };
   if (c.color && !p.color) r.color = { s: 'unk', t: 'магазин не указал цвет' };
   else if (c.color) {
@@ -128,6 +132,7 @@ export function matchProduct(p, c = {}) {
   }
   if (r.brand.s === 'no') parts.push('другой бренд (' + p.brand + ')');
   if (r.size.s === 'no') parts.push('нет размера ' + c.size);
+  if (r.size.s === 'near') parts.push('размер ' + r.size.t.replace('есть ', ''));
   if (r.color.s === 'near') parts.push('цвет близкий (' + r.color.t.replace('близкий: ', '') + ')');
   if (r.color.s === 'no') parts.push('другой цвет (' + p.color + ')');
   const unk = ['brand', 'size', 'color'].filter((k) => r[k].s === 'unk').map((k) => names[k]);
@@ -144,9 +149,30 @@ export function matchProduct(p, c = {}) {
   };
 }
 
-/** Товары, которые попадают в выдачу: нужный размер есть или магазин не сообщил размеры. */
+/** Товары, которые попадают в выдачу: нужный размер есть в наличии или магазин не сообщил размеры. */
 export const baseProducts = (items, crit) =>
-  items.filter((p) => !crit.size || !(p.sizes && p.sizes.length) || p.sizes.some((z) => z.toLowerCase() === crit.size.toLowerCase()));
+  items.filter((p) => {
+    if (!crit.size) return true;
+    const known = (p.sizes && p.sizes.length) || (p.sizesOut && p.sizesOut.length);
+    return !known || (p.sizes || []).some((z) => sizeEq(z, crit.size) || sizeNear(z, crit.size));
+  });
+
+const normSize = (x) => String(x).toLowerCase().replace(/\s*(ru|rus|eu|it|fr|int)$/i, '').trim();
+
+/** Точное совпадение: «M» = «m», «38» = «38 RU». */
+export function sizeEq(a, b) {
+  return normSize(a) === normSize(b);
+}
+
+// Буквенные размеры одежды ↔ российские (как в таблицах размеров Lamoda/Stockmann, женская одежда).
+const LETTER_RU = { xxs: [38, 40], xs: [40, 42], s: [42, 44], m: [44, 46], l: [46, 48], xl: [48, 50], xxl: [50, 52] };
+
+/** Примерное совпадение буквенного и российского размера: «M» ≈ «44 RU» / «46 RU». */
+export function sizeNear(a, b) {
+  const x = normSize(a), y = normSize(b);
+  const check = (letter, num) => !!LETTER_RU[letter] && /^\d{2}$/.test(num) && LETTER_RU[letter].includes(+num);
+  return check(x, y) || check(y, x);
+}
 
 export const emptyFilters = () => ({ stores: [], brands: [], sizes: [], colors: [], min: '', max: '' });
 export const hasFilters = (f) => !!(f.stores.length || f.brands.length || f.sizes.length || f.colors.length || f.min || f.max);

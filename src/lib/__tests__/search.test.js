@@ -141,3 +141,25 @@ describe('история цены', () => {
     expect(priceAt(pts, 5 * day)).toBe(null);
   });
 });
+
+describe('размеры', () => {
+  it('буквенный и российский размер — примерное совпадение', async () => {
+    const { sizeNear, sizeEq } = await import('../search.js');
+    expect(sizeEq('38', '38 RU')).toBe(true);
+    expect(sizeNear('M', '46 RU')).toBe(true);
+    expect(sizeNear('44 RU', 'm')).toBe(true);
+    expect(sizeNear('M', '50 RU')).toBe(false);
+  });
+  it('товар с размерами RU остаётся в выдаче по M и помечается «≈»', () => {
+    const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'u', title: 'Тренч', brand: 'Mango', price: 10000, sizes: ['42 RU', '46 RU'] });
+    const { base } = getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match');
+    expect(base.length).toBe(1);
+    const r = base[0].m.reasons.find((x) => x.key === 'size');
+    expect(r.s).toBe('near');
+    expect(r.text).toBe('есть 46 RU ≈ M');
+  });
+  it('размеры известны, но нужного нет — товар отсеивается', () => {
+    const it = liveItem({ id: 'x', store: 'Stockmann', url: 'u', title: 'Тренч', price: 10000, sizes: ['XS', 'S'], sizesOut: ['M'] });
+    expect(getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match').base.length).toBe(0);
+  });
+});

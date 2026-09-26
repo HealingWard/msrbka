@@ -1,10 +1,12 @@
 // Каталог «Прицел». Демонстрационные данные из дизайна: товары, магазины, бренды, цвета.
 // Ссылки на товары ведут на реальный поиск в соответствующем магазине.
 
+// Порядок — по приоритету: Stockmann, Lamoda, затем Яндекс Маркет.
+// ext: магазин ищется через расширение для Chrome (сайты закрыты от серверных запросов).
 export const STORES = [
- {name:'Яндекс Маркет',domain:'market.yandex.ru',search:'https://market.yandex.ru/search?text='},
- {name:'Lamoda',domain:'lamoda.ru',search:'https://www.lamoda.ru/catalogsearch/result/?q='},
- {name:'Stockmann',domain:'stockmann.ru',search:'https://stockmann.ru/search/?q='}];
+ {id:'stockmann',name:'Stockmann',domain:'stockmann.ru',search:'https://stockmann.ru/search/?q=',ext:true},
+ {id:'lamoda',name:'Lamoda',domain:'lamoda.ru',search:'https://www.lamoda.ru/catalogsearch/result/?q=',ext:true},
+ {id:'market',name:'Яндекс Маркет',domain:'market.yandex.ru',search:'https://market.yandex.ru/search?text='}];
 
 export const STORE_NAMES = STORES.map((s) => s.name);
 

@@ -31,7 +31,11 @@ async function withServer(fn) {
   await new Promise((r) => server.listen(0, r));
   const base = 'http://127.0.0.1:' + server.address().port;
   const get = async (p) => { const r = await fetch(base + p); return { status: r.status, body: await r.json(), headers: r.headers }; };
-  try { await fn(get, history); } finally { server.close(); }
+  const post = async (p, body) => {
+    const r = await fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+    return { status: r.status, body: await r.json() };
+  };
+  try { await fn(get, history, post); } finally { server.close(); }
 }
 
 test('поиск по магазину, кэш и история цен', async () => {
@@ -88,4 +92,22 @@ test('история: одна точка в день', () => {
   h.record({ id: 'a', price: 90 }, 1000);
   h.record({ id: 'a', price: 80 }, day * 2);
   assert.deepEqual(h.get('a'), [{ t: 1000, price: 90 }, { t: day * 2, price: 80 }]);
+});
+
+test('POST /api/record: цены из расширения попадают в историю, чужие ссылки отбрасываются', async () => {
+  await withServer(async (get, history, post) => {
+    const r = await post('/api/record', { items: [
+      { id: 'stockmann:1234567', url: 'https://stockmann.ru/product/1234567-trench/', title: 'Тренч', price: 18990, old: 23990 },
+      { id: 'lamoda:MP002XW0ABCD', url: 'https://www.lamoda.ru/p/mp002xw0abcd/x/', title: 'Тренч', price: 11999 },
+      { id: 'stockmann:1', url: 'https://evil.example/product/1/', price: 100 },
+      { id: 'lamoda:X', url: 'https://stockmann.ru/product/7654321-x/', price: 5000 },
+      { id: 'stockmann:2', url: 'https://stockmann.ru/product/2222222-x/', price: 'NaN' },
+    ] });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.saved, 2);
+    const h = await get('/api/history?id=stockmann:1234567&id=lamoda:MP002XW0ABCD');
+    assert.equal(h.body['stockmann:1234567'][0].price, 18990);
+    assert.equal(h.body['lamoda:MP002XW0ABCD'][0].price, 11999);
+    assert.equal((await post('/api/record', '{bad')).status, 400);
+  });
 });

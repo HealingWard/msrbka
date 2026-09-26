@@ -552,3 +552,8 @@ h1 { font-weight: 500; }
 .load-row .status.fail { color: var(--acc); }
 .chart-empty { padding: 28px 0 8px; color: var(--ink2); font-size: 13.5px; line-height: 1.5; }
 .mode-badge { font-size: 11px; font-family: var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--ink3); }
+.ext-page p { max-width: 720px; line-height: 1.55; }
+.ext-steps { margin: 28px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 18px; font-size: 14.5px; line-height: 1.55; }
+.ext-steps .btn { margin: 8px 0 6px; display: inline-flex; }
+.ext-steps code, .ext-list code { background: var(--line2); padding: 1px 6px; border-radius: 5px; font-family: var(--mono); font-size: 12.5px; }
+.ext-list { margin: 10px 0 0; padding-left: 18px; line-height: 1.6; color: var(--ink2); }
