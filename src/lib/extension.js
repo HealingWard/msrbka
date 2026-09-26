@@ -1,4 +1,4 @@
-// Связь с расширением «Прицел» для Chrome (папка extension/).
+// Связь с расширением «Отмерь» для Chrome (папка extension/).
 // Расширение встраивает на страницу мост (bridge.js); общаемся через window.postMessage.
 
 let ready = null;      // Promise<string|null> — версия расширения или null

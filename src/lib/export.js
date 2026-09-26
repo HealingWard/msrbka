@@ -110,4 +110,4 @@ export function downloadFile(name, content, type) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export const safeFileName = (s) => (s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Прицел').slice(0, 120);
+export const safeFileName = (s) => (s.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Отмерь').slice(0, 120);

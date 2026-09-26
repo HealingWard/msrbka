@@ -9,7 +9,7 @@ const SHEETS_URL = { new: 'https://sheets.new', existing: 'https://docs.google.c
 export function ExportModal({ query, list, base, checked, onClose }) {
   const [scope, setScope] = useState('filtered');
   const [dest, setDest] = useState('new');
-  const [name, setName] = useState(() => 'Прицел — ' + query + ' — ' + dateStamp());
+  const [name, setName] = useState(() => 'Отмерь — ' + query + ' — ' + dateStamp());
   const [state, setState] = useState('idle'); // idle | working | done | failed
 
   const [histories, setHistories] = useState({});

@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Прицел: поиск товаров в магазинах и история цен",
+  "description": "Отмерь: поиск товаров в магазинах и история цен",
   "engines": { "node": ">=20" },
   "scripts": {
     "start": "node src/index.js",

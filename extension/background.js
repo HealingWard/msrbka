@@ -1,4 +1,4 @@
-// Фоновая часть расширения «Прицел».
+// Фоновая часть расширения «Отмерь».
 // По запросу сайта открывает поиск магазина в свёрнутом окне вашего браузера, читает выдачу,
 // затем открывает карточки найденных товаров (по 2 одновременно) и собирает размеры, цвет, бренд.
 // Если магазин спрашивает «вы не робот?», окно разворачивается, чтобы вы прошли проверку сами.
@@ -91,7 +91,7 @@ async function visit(windowId, url, mode, opts, onNeedHuman) {
       onNeedHuman?.();
       await chrome.windows.update(windowId, { state: 'normal', focused: true, width: 1100, height: 850 }).catch(() => {});
       await chrome.tabs.update(tab.id, { active: true });
-      chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: 'Прицел', message: 'Магазин просит подтвердить, что вы не робот. Пройдите проверку в открывшемся окне — поиск продолжится сам.' });
+      chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: 'Отмерь', message: 'Магазин просит подтвердить, что вы не робот. Пройдите проверку в открывшемся окне — поиск продолжится сам.' });
       const passed = await waitHuman(tab.id);
       if (!passed) return { blocked: r.blocked };
       await waitLoaded(tab.id, 10000);
@@ -287,7 +287,7 @@ async function dumpPages(query) {
       await waitLoaded(tab.id);
       const r = await extract(tab.id, 'search', { linkPattern: s.linkPattern, host: s.host });
       const page = await extract(tab.id, 'html', {});
-      await chrome.downloads.download({ url: toDataUrl(page.html, 'text/html'), filename: `pricel/${storeId}-search.html`, conflictAction: 'overwrite' });
+      await chrome.downloads.download({ url: toDataUrl(page.html, 'text/html'), filename: `otmer/${storeId}-search.html`, conflictAction: 'overwrite' });
       report[storeId] = { searchUrl: page.url, title: page.title, blocked: r?.blocked || null, found: r?.items?.length || 0, items: (r?.items || []).slice(0, 5) };
       // Первая карточка: из выдачи или любая ссылка, похожая на товар.
       const first = r?.items?.[0]?.url;
@@ -297,7 +297,7 @@ async function dumpPages(query) {
         await waitLoaded(tab.id);
         const pr = await extract(tab.id, 'product', { linkPattern: s.linkPattern, host: s.host });
         const ph = await extract(tab.id, 'html', {});
-        await chrome.downloads.download({ url: toDataUrl(ph.html, 'text/html'), filename: `pricel/${storeId}-product.html`, conflictAction: 'overwrite' });
+        await chrome.downloads.download({ url: toDataUrl(ph.html, 'text/html'), filename: `otmer/${storeId}-product.html`, conflictAction: 'overwrite' });
         report[storeId].product = pr?.item || null;
       }
     } catch (e) {
@@ -306,7 +306,7 @@ async function dumpPages(query) {
       await closeWindow(win);
     }
   }
-  await chrome.downloads.download({ url: toDataUrl(JSON.stringify(report, null, 2), 'application/json'), filename: 'pricel/report.json', conflictAction: 'overwrite' });
+  await chrome.downloads.download({ url: toDataUrl(JSON.stringify(report, null, 2), 'application/json'), filename: 'otmer/report.json', conflictAction: 'overwrite' });
   return report;
 }
 

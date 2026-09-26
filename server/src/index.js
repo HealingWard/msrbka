@@ -1,4 +1,4 @@
-// HTTP API «Прицела».
+// HTTP API «Отмерь».
 //   GET /api/health
 //   GET /api/stores
 //   GET /api/search?store=lamoda&q=тренч          — товары одного магазина
@@ -188,7 +188,7 @@ if (isMain) {
   });
   const server = http.createServer(handler);
   const port = +env.PORT || 8787;
-  server.listen(port, env.HOST || '0.0.0.0', () => console.log(`Прицел API: http://localhost:${port}/api/health`));
+  server.listen(port, env.HOST || '0.0.0.0', () => console.log(`Отмерь API: http://localhost:${port}/api/health`));
   const stop = async () => { await history.save(); process.exit(0); };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
