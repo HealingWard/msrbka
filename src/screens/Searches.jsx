@@ -1,7 +1,8 @@
-import { PRODUCTS } from '../data/catalog.js';
 import { PRODUCTS_F, countStr, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { criteriaChips } from '../lib/search.js';
+import { baseProducts, criteriaChips, runKey } from '../lib/search.js';
+import { isLive } from '../lib/config.js';
+import { DEMO_ITEMS } from '../lib/items.js';
 import { Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
@@ -18,15 +19,21 @@ export function Searches() {
       </div>
       <div className="saved-list">
         {app.saved.map((x) => {
-          const found = PRODUCTS.filter((p) => p.ds === x.ds && x.stores.includes(p.store) && (!x.crit.size || p.sizes.includes(x.crit.size)));
+          // Сколько нашлось: в демо — по каталогу, в живом режиме — по последней выдаче, если она ещё в памяти.
+          const cached = app.results[runKey(x)];
+          const pool = isLive()
+            ? (cached ? x.stores.flatMap((n) => cached.stores[n]?.items || []) : null)
+            : DEMO_ITEMS.filter((p) => p.ds === x.ds && x.stores.includes(p.store));
+          const found = pool ? baseProducts(pool, x.crit) : null;
           return (
             <div key={x.id} className="saved-item">
               <div style={{ minWidth: 0 }}>
                 <div className="q">{x.q}</div>
                 <div className="tags"><Tags items={criteriaChips(x.crit, x.stores, x.ds)} variant="small" /></div>
                 <div className="meta">
-                  Последний запуск {whenStr(x.last)} · {countStr(found.length, PRODUCTS_F)}
-                  {found.length ? ' · от ' + rub(Math.min(...found.map((p) => p.price))) : ''}
+                  Последний запуск {whenStr(x.last)}
+                  {found && ' · ' + countStr(found.length, PRODUCTS_F)}
+                  {found && found.length ? ' · от ' + rub(Math.min(...found.map((p) => p.price))) : ''}
                 </div>
               </div>
               <div className="saved-actions">

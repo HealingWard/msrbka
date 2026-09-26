@@ -3,7 +3,7 @@
 //   GET /api/stores
 //   GET /api/search?store=lamoda&q=тренч          — товары одного магазина
 //   GET /api/product?url=https://www.lamoda.ru/p/…  — карточка товара + история цены
-//   GET /api/history?ids=lamoda:ABC,stockmann:123   — история цен для избранного
+//   GET /api/history?id=lamoda:ABC&id=stockmann:123  — история цен для избранного (или ids=a,b)
 //
 // Переменные окружения: PORT (8787), HOST (0.0.0.0), DATA_DIR (./data),
 // ALLOWED_ORIGINS (через запятую, по умолчанию «*»), CACHE_MINUTES (20), STORE_GAP_MS (1500), RATE_PER_MINUTE (60).
@@ -115,7 +115,7 @@ export function createApp({
         }
       }
       if (u.pathname === '/api/history') {
-        const ids = (u.searchParams.get('ids') || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 200);
+        const ids = [...u.searchParams.getAll('id'), ...(u.searchParams.get('ids') || '').split(',')].map((x) => x.trim()).filter(Boolean).slice(0, 200);
         return send(200, Object.fromEntries(ids.map((id) => [id, history.get(id)])));
       }
       return send(404, { error: 'не найдено' });

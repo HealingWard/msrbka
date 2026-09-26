@@ -268,6 +268,17 @@ export function productsFromJson(blobs, base) {
 
 // ——— 3. DOM-карточки ———
 
+/** Текст узла с пробелами между элементами (textContent склеивает «12 Storeez» и «Тренч» в одно слово). */
+function textOf(node) {
+  const parts = [];
+  const walk = (n) => {
+    if (n.nodeType === 3) parts.push(n.text);
+    else if (n.childNodes && n.tagName !== 'SCRIPT' && n.tagName !== 'STYLE') n.childNodes.forEach(walk);
+  };
+  walk(node);
+  return decodeEntities(parts.join(' ')).replace(/\s+/g, ' ').trim();
+}
+
 const PRICE_RE = /(\d{1,3}(?:[\s  ]\d{3})+|\d{3,7})(?:[.,]\d{1,2})?\s*(?:₽|руб\.?|р\.)/gi;
 
 function pricesInText(text) {
@@ -292,17 +303,18 @@ export function extractDomCards(root, base, productPath) {
     // Поднимаемся к контейнеру карточки: первый предок, в тексте которого есть цена.
     let node = a, card = null;
     for (let i = 0; i < 7 && node; i++) {
-      const txt = node.textContent || '';
+      const txt = textOf(node);
       if (pricesInText(txt).length) { card = node; break; }
       node = node.parentNode;
     }
-    if (!card || (card.textContent || '').length > 3000) continue;
-    const prices = pricesInText(card.textContent);
+    const cardText = card ? textOf(card) : '';
+    if (!card || cardText.length > 3000) continue;
+    const prices = pricesInText(cardText);
     const price = Math.min(...prices);
     const maxP = Math.max(...prices);
     const img = card.querySelector('img');
     const imgSrc = img && (img.getAttribute('src') || img.getAttribute('data-src') || (img.getAttribute('srcset') || '').split(/[\s,]+/)[0]);
-    const title = clean(a.getAttribute('title') || a.textContent || (img && img.getAttribute('alt')) || '');
+    const title = clean(a.getAttribute('title') || textOf(a) || (img && img.getAttribute('alt')) || '');
     const prev = byUrl.get(key);
     const item = {
       url,
@@ -311,7 +323,7 @@ export function extractDomCards(root, base, productPath) {
       price,
       old: maxP > price && maxP < price * 5 ? maxP : null,
       image: absUrl(imgSrc && !imgSrc.startsWith('data:') ? imgSrc : null, base),
-      cardText: clean(card.textContent).slice(0, 400),
+      cardText: cardText.slice(0, 400),
     };
     byUrl.set(key, prev ? merge(prev, item) : item);
   }

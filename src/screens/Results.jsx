@@ -2,36 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import { ALLSIZES, HEX } from '../data/catalog.js';
 import { PRODUCTS_F, STORES_F, countStr, fmt, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { baseProducts, criteriaChips, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
+import { criteriaChips, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
+import { searchOne } from '../lib/source.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { ProductCard, ProductTable } from '../components/ProductCard.jsx';
 import { CheckRow, Segmented, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
-const STEP_MS = 450;
+const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка' };
 
-function Loading({ run, onDone }) {
-  const [step, setStep] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setStep((s) => s + 1), STEP_MS);
-    return () => clearInterval(t);
-  }, []);
-  useEffect(() => { if (step > run.stores.length) onDone(); }, [step, run.stores.length, onDone]);
-  const all = baseProducts(run);
+function Loading({ run, entry }) {
+  const stores = entry?.stores || {};
   return (
     <div className="page loading" aria-live="polite">
       <div className="mono-label">Ищу</div>
       <h1>«{run.q}»</h1>
-      {run.stores.map((name, i) => {
-        const done = i < step, active = i === step;
-        const cnt = all.filter((p) => p.store === name).length;
+      {run.stores.map((name) => {
+        const r = stores[name];
+        const status = r
+          ? r.status === 'ok' ? 'готово · ' + countStr(r.items.length, PRODUCTS_F) : STATUS_TEXT[r.status] || r.status
+          : 'ищу…';
         return (
           <div key={name} className="load-row">
             <div className="top">
               <span>{name}</span>
-              <span className={'status' + (done ? ' done' : '')}>{done ? 'готово · ' + countStr(cnt, PRODUCTS_F) : active ? 'ищу…' : 'в очереди'}</span>
+              <span className={'status' + (r ? (r.status === 'ok' ? ' done' : ' fail') : '')}>{status}</span>
             </div>
-            <div className="bar"><i style={{ width: done ? '100%' : active ? '60%' : '0%' }} /></div>
+            <div className="bar"><i style={{ width: r ? '100%' : '60%' }} /></div>
           </div>
         );
       })}
@@ -42,10 +39,12 @@ function Loading({ run, onDone }) {
 function Filters({ base, ds, f, setF, open, onClose, shown }) {
   const count = (fn) => {
     const m = {};
-    base.forEach(({ p }) => [].concat(fn(p)).forEach((v) => { m[v] = (m[v] || 0) + 1; }));
+    base.forEach(({ p }) => [].concat(fn(p)).filter(Boolean).forEach((v) => { m[v] = (m[v] || 0) + 1; }));
     return m;
   };
-  const sc = count((p) => p.store), bc = count((p) => p.brand), zc = count((p) => p.sizes), cc = count((p) => p.color);
+  const sc = count((p) => p.store), bc = count((p) => p.brand), zc = count((p) => p.sizes || []), cc = count((p) => p.color);
+  const known = ALLSIZES[ds] || [];
+  const sizeOrder = [...known, ...Object.keys(zc).filter((z) => !known.includes(z)).sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }))];
   const prices = base.map((x) => x.p.price);
   const set = (k, v) => setF((st) => ({ ...st, [k]: v }));
   return (
@@ -61,29 +60,35 @@ function Filters({ base, ds, f, setF, open, onClose, shown }) {
         <div className="filter-title">Магазин</div>
         {Object.keys(sc).map((k) => <CheckRow compact key={k} on={f.stores.includes(k)} label={k} meta={sc[k]} onClick={() => set('stores', toggle(f.stores, k))} />)}
       </div>
-      <div>
-        <div className="filter-title">Бренд</div>
-        {Object.keys(bc).sort((a, b) => a.localeCompare(b, 'ru')).map((k) => (
-          <CheckRow compact key={k} on={f.brands.includes(k)} label={k} meta={bc[k]} onClick={() => set('brands', toggle(f.brands, k))} />
-        ))}
-      </div>
-      <div>
-        <div className="filter-title" style={{ marginBottom: 10 }}>Размер</div>
-        <div className="size-grid">
-          {ALLSIZES[ds].filter((z) => zc[z]).map((z) => (
-            <button key={z} type="button" aria-pressed={f.sizes.includes(z)} className={'size-btn' + (f.sizes.includes(z) ? ' on' : '')}
-              onClick={() => set('sizes', toggle(f.sizes, z))}>{z}</button>
+      {Object.keys(bc).length > 0 && (
+        <div>
+          <div className="filter-title">Бренд</div>
+          {Object.keys(bc).sort((a, b) => a.localeCompare(b, 'ru')).map((k) => (
+            <CheckRow compact key={k} on={f.brands.includes(k)} label={k} meta={bc[k]} onClick={() => set('brands', toggle(f.brands, k))} />
           ))}
         </div>
-      </div>
-      <div>
-        <div className="filter-title">Цвет</div>
-        {Object.keys(cc).map((k) => (
-          <CheckRow compact key={k} on={f.colors.includes(k)} label={k} meta={cc[k]} onClick={() => set('colors', toggle(f.colors, k))}>
-            <i className="swatch" style={{ background: HEX[k] }} />
-          </CheckRow>
-        ))}
-      </div>
+      )}
+      {Object.keys(zc).length > 0 && (
+        <div>
+          <div className="filter-title" style={{ marginBottom: 10 }}>Размер</div>
+          <div className="size-grid">
+            {sizeOrder.filter((z) => zc[z]).map((z) => (
+              <button key={z} type="button" aria-pressed={f.sizes.includes(z)} className={'size-btn' + (f.sizes.includes(z) ? ' on' : '')}
+                onClick={() => set('sizes', toggle(f.sizes, z))}>{z}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {Object.keys(cc).length > 0 && (
+        <div>
+          <div className="filter-title">Цвет</div>
+          {Object.keys(cc).map((k) => (
+            <CheckRow compact key={k} on={f.colors.includes(k)} label={k} meta={cc[k]} onClick={() => set('colors', toggle(f.colors, k))}>
+              <i className="swatch" style={{ background: HEX[k] || 'transparent' }} />
+            </CheckRow>
+          ))}
+        </div>
+      )}
       <div>
         <div className="filter-title" style={{ marginBottom: 10 }}>Цена, ₽</div>
         <div className="price-inputs">
@@ -110,7 +115,32 @@ export function Results({ run }) {
   const [sort, setSort] = useState('match');
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const loading = app.animateKey === key;
+
+  const entry = app.results[key];
+  const missing = run.stores.filter((n) => !entry?.stores?.[n]);
+  const loading = missing.length > 0;
+
+  // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
+  const { setStoreResult, setLastRun } = app;
+  const missingKey = missing.join('|');
+  useEffect(() => {
+    if (!missingKey) return undefined;
+    const ctrl = new AbortController();
+    missingKey.split('|').forEach((name, i) => {
+      searchOne(run, name, ctrl.signal, i)
+        .then((res) => { if (!ctrl.signal.aborted) setStoreResult(key, name, res); })
+        .catch(() => { /* отменено */ });
+    });
+    return () => ctrl.abort();
+    // missingKey меняется по мере ответов, но запрос уже в пути — перезапускать его не нужно.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, loading]);
+
+  // Для страницы товара запоминаем текущий поиск (в т.ч. открытый по ссылке).
+  const sameRun = app.lastRun && runKey(app.lastRun) === key;
+  useEffect(() => {
+    if (!sameRun) setLastRun({ ...run, at: new Date().toISOString() });
+  }, [sameRun, run, setLastRun]);
 
   useEffect(() => {
     if (!filtersOpen) return undefined;
@@ -120,23 +150,17 @@ export function Results({ run }) {
     return () => { document.removeEventListener('keydown', onKey); document.body.classList.remove('no-scroll'); };
   }, [filtersOpen]);
 
-  // Для страницы товара и «проверено в …» запоминаем текущий поиск (в т.ч. открытый по ссылке).
-  const sameRun = app.lastRun && runKey(app.lastRun) === key;
-  const { setLastRun } = app;
-  useEffect(() => {
-    if (!sameRun) setLastRun({ ...run, at: new Date().toISOString() });
-  }, [sameRun, run, setLastRun]);
+  const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
+  const { base, list } = useMemo(() => getResults(items, run.crit, f, sort), [items, run.crit, f, sort]);
 
-  const { base, list } = useMemo(() => getResults(run, f, sort), [run, f, sort]);
+  if (loading) return <Loading run={run} entry={entry} />;
 
-  if (loading) return <Loading run={run} onDone={() => app.setAnimateKey(null)} />;
-
-  const at = sameRun ? app.lastRun.at : new Date().toISOString();
-  const checked = whenStr(at);
+  const checked = whenStr(entry.at);
+  const failed = run.stores.map((n) => ({ name: n, ...entry.stores[n] })).filter((r) => r.status !== 'ok');
   const full = base.filter((x) => x.m.score === 100).length;
   const view = app.prefs.view === 'table' ? 'table' : 'grid';
   const isSaved = app.saved.some((x) => x.q === run.q && x.ds === run.ds);
-  const open = (id) => navigate('/product/' + id + '?from=results');
+  const open = (id) => navigate('/product/' + encodeURIComponent(id) + '?from=results');
 
   return (
     <div className="page results">
@@ -150,11 +174,13 @@ export function Results({ run }) {
             <Tags items={criteriaChips(run.crit, run.stores, run.ds)} variant="outlined" />
             <button type="button" className="link-btn underline" style={{ fontSize: 12.5, marginLeft: 6 }}
               onClick={() => { app.setQuery(run.q); navigate('/'); }}>Изменить</button>
+            <button type="button" className="link-btn underline" style={{ fontSize: 12.5, marginLeft: 6 }}
+              onClick={() => app.runSearch(run)}>Обновить</button>
           </div>
         </div>
         <div className="head-actions">
           <button type="button" className="btn btn-secondary btn-md" disabled={isSaved}
-            onClick={() => { app.saveSearch({ ...run, at }); app.notify('Поиск сохранён в «Мои поиски»'); }}>
+            onClick={() => { app.saveSearch({ ...run, at: entry.at }); app.notify('Поиск сохранён в «Мои поиски»'); }}>
             {isSaved ? '✓ Поиск сохранён' : 'Сохранить поиск'}
           </button>
           <button type="button" className="btn btn-primary btn-md" onClick={() => setExportOpen(true)} disabled={!base.length}>
@@ -166,6 +192,17 @@ export function Results({ run }) {
       <div className="results-layout">
         <Filters base={base} ds={run.ds} f={f} setF={setF} open={filtersOpen} onClose={() => setFiltersOpen(false)} shown={list.length} />
         <main style={{ minWidth: 0 }}>
+          {failed.length > 0 && (
+            <div className="store-notes">
+              {failed.map((r) => (
+                <div key={r.name} className="store-note" role="status">
+                  <b>{r.name}</b>
+                  <span>{r.status === 'blocked' ? 'не удалось получить выдачу: ' : 'ошибка: '}{r.error || 'неизвестная ошибка'}</span>
+                  <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="toolbar">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <button type="button" className="btn btn-secondary btn-sm filters-toggle" aria-expanded={filtersOpen} aria-controls="filters"
@@ -182,7 +219,7 @@ export function Results({ run }) {
 
           {!base.length && (
             <div className="empty">
-              В выбранных магазинах нет товаров под этот запрос.{' '}
+              {failed.length === run.stores.length ? 'Ни один магазин не ответил. ' : 'В выбранных магазинах ничего не нашлось под этот запрос. '}
               <button type="button" className="link-btn underline" style={{ color: 'var(--ink)', fontSize: 14 }} onClick={() => navigate('/')}>Изменить запрос</button>
             </div>
           )}
@@ -195,12 +232,12 @@ export function Results({ run }) {
           {!!list.length && view === 'grid' && (
             <div className="grid">
               {list.map(({ p, m }) => (
-                <ProductCard key={p.id} p={p} m={m} checked={checked} fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p.id)} />
+                <ProductCard key={p.id} p={p} m={m} checked={checked} fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p)} />
               ))}
             </div>
           )}
           {!!list.length && view === 'table' && (
-            <ProductTable items={list} favs={app.favs} checked={checked} onOpen={open} onFav={app.toggleFav} />
+            <ProductTable items={list} favs={app.favs} checked={checked} onOpen={open} onFav={(p) => app.toggleFav(p)} />
           )}
         </main>
       </div>

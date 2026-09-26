@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { navigate, useRoute } from './lib/router.js';
 import { runFromParams, runKey } from './lib/search.js';
 import { Toast } from './components/ui.jsx';
+import { isLive } from './lib/config.js';
 import { Clarify } from './screens/Clarify.jsx';
 import { Favorites } from './screens/Favorites.jsx';
 import { Home } from './screens/Home.jsx';
@@ -50,7 +51,9 @@ export function App() {
   let screen = null;
   let section = 'search';
   let title = null;
-  const productMatch = path.match(/^\/product\/([\w-]+)$/);
+  const productMatch = path.match(/^\/product\/(.+)$/);
+  let productId = null;
+  if (productMatch) { try { productId = decodeURIComponent(productMatch[1]); } catch { productId = productMatch[1]; } }
 
   if (path === '/') { screen = <Home />; }
   else if (path === '/clarify') { screen = <Clarify />; title = 'Уточнение'; }
@@ -58,7 +61,7 @@ export function App() {
   else if (productMatch) {
     const from = params.get('from') || '';
     if (from === 'favorites' || from === 'searches') section = from;
-    screen = <Product key={productMatch[1]} id={productMatch[1]} from={from} />;
+    screen = <Product key={productId} id={productId} from={from} />;
   } else if (path === '/searches') { screen = <Searches />; section = 'searches'; }
   else if (path === '/favorites') { screen = <Favorites />; section = 'favorites'; }
 
@@ -76,8 +79,9 @@ export function App() {
       <Header section={section} />
       {screen}
       <footer className="footer">
-        Прицел · сравнение товаров в Яндекс Маркете, Lamoda и Stockmann. Каталог и история цен — демонстрационные данные;
-        кнопки «Открыть в магазине» ведут на поиск товара на сайте магазина. Поиски и избранное хранятся в этом браузере.
+        {isLive()
+          ? 'Прицел · поиск товаров в Яндекс Маркете, Lamoda и Stockmann. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки. Поиски и избранное хранятся в этом браузере.'
+          : 'Прицел · демо-режим: каталог и история цен — демонстрационные данные, кнопки «Открыть в магазине» ведут на поиск по названию. Подключите сервер поиска (server/), чтобы искать настоящие товары. Поиски и избранное хранятся в этом браузере.'}
       </footer>
       <Toast message={app.toast} onDone={app.clearToast} />
     </>

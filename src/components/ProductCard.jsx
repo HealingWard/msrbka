@@ -1,15 +1,25 @@
+import { useState } from 'react';
 import { GLYPH } from '../lib/search.js';
 import { productView } from '../lib/product.js';
 
 const stop = (e) => e.stopPropagation();
 const onKeyOpen = (open) => (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) open(); };
 
+/** Фото товара; если его нет или оно не загрузилось — штриховка-заглушка из дизайна. */
+export function Photo({ src, label, className = '' }) {
+  const [failed, setFailed] = useState(false);
+  if (src && !failed) {
+    return <img className={'photo-img ' + className} src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
+  }
+  return label ? <span className="photo-label">{label}</span> : null;
+}
+
 export function ProductCard({ p, m, fav, onOpen, onFav, checked }) {
   const v = productView(p);
   return (
-    <article className="card" onClick={onOpen} onKeyDown={onKeyOpen(onOpen)} tabIndex={0} aria-label={p.brand + ' — ' + p.title}>
+    <article className="card" onClick={onOpen} onKeyDown={onKeyOpen(onOpen)} tabIndex={0} aria-label={(p.brand ? p.brand + ' — ' : '') + p.title}>
       <div className="card-photo">
-        <span className="photo-label">фото · {p.kind}</span>
+        <Photo src={p.image} label={'фото' + (p.kind ? ' · ' + p.kind : '')} />
         <div className="card-badges">
           <span className="badge">{p.store}</span>
           {v.hasOld && <span className="badge sale">{v.discStr}</span>}
@@ -20,20 +30,24 @@ export function ProductCard({ p, m, fav, onOpen, onFav, checked }) {
       </div>
       <div className="card-body">
         <div>
-          <div className="brand">{p.brand}</div>
+          {p.brand && <div className="brand">{p.brand}</div>}
           <div className="card-title">{p.title}</div>
         </div>
         <div className="price-line">
           <span className={'price' + (v.hasOld ? ' sale' : '')}>{v.priceStr}</span>
           {v.hasOld && <span className="old-price">{v.oldStr}</span>}
         </div>
-        <div className="meta-line">
-          <span className="rating">★ {v.rating}</span><span>{v.reviewsStr}</span>
-          <span className={v.lowStock ? 'low-stock' : ''}>· {p.stock}</span>
-        </div>
+        {(v.rating || v.stock) && (
+          <div className="meta-line">
+            {v.rating && <span className="rating">★ {v.rating}</span>}
+            {v.reviewsStr && <span>{v.reviewsStr}</span>}
+            {v.stock && <span className={v.lowStock ? 'low-stock' : ''}>{v.rating ? '· ' : ''}{v.stock}</span>}
+          </div>
+        )}
         <div className="kv">
-          <span>Размеры</span><span>{v.sizesStr}</span>
-          <span>Цвет</span><span className="inline-color"><i className="swatch sm" style={{ background: v.colorHex }} />{p.color}</span>
+          <span>Размеры</span><span className={p.sizes && p.sizes.length ? '' : 'muted'}>{v.sizesStr}</span>
+          <span>Цвет</span>
+          <span className={'inline-color' + (p.color ? '' : ' muted')}>{v.colorHex && <i className="swatch sm" style={{ background: v.colorHex }} />}{v.colorStr}</span>
         </div>
         <div className="why">
           <div className="why-head">
@@ -69,18 +83,18 @@ export function ProductTable({ items, favs, onOpen, onFav, checked }) {
         return (
           <div key={p.id} className="trow body" onClick={() => onOpen(p.id)} onKeyDown={onKeyOpen(() => onOpen(p.id))} tabIndex={0}>
             <div className="cell-product">
-              <div className="thumb" />
-              <div style={{ minWidth: 0 }}><div className="brand">{p.brand}</div><div style={{ marginTop: 2, lineHeight: 1.3 }}>{p.title}</div></div>
+              <div className="thumb"><Photo src={p.image} /></div>
+              <div style={{ minWidth: 0 }}>{p.brand && <div className="brand">{p.brand}</div>}<div style={{ marginTop: 2, lineHeight: 1.3 }}>{p.title}</div></div>
             </div>
             <span>{p.store}</span>
             <div>
               <div className={v.hasOld ? 'sale-text' : ''} style={{ fontWeight: 600 }}>{v.priceStr}</div>
               {v.hasOld && <div className="cell-sub"><s>{v.oldStr}</s> <span className="sale-text">{v.discStr}</span></div>}
             </div>
-            <div><div>★ {v.rating}</div><div className="cell-sub">{v.reviewsStr}</div></div>
-            <span style={{ fontSize: 12.5 }}>{v.sizesStr}</span>
-            <span className="inline-color"><i className="swatch sm" style={{ background: v.colorHex }} />{p.color}</span>
-            <div><div className={v.lowStock ? 'low-stock' : ''}>{p.stock}</div><div className="cell-sub">{checked}</div></div>
+            <div>{v.rating ? <><div>★ {v.rating}</div><div className="cell-sub">{v.reviewsStr}</div></> : <span className="muted">—</span>}</div>
+            <span style={{ fontSize: 12.5 }} className={p.sizes && p.sizes.length ? '' : 'muted'}>{p.sizes && p.sizes.length ? v.sizesStr : '—'}</span>
+            <span className={'inline-color' + (p.color ? '' : ' muted')}>{v.colorHex && <i className="swatch sm" style={{ background: v.colorHex }} />}{p.color || '—'}</span>
+            <div><div className={v.lowStock ? 'low-stock' : ''}>{v.stock || <span className="muted">—</span>}</div><div className="cell-sub">{checked}</div></div>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
               <span style={{ fontWeight: 600, minWidth: 38 }}>{m.score}%</span>
               <span style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--ink-soft)' }}>{m.summary}</span>
@@ -88,7 +102,7 @@ export function ProductTable({ items, favs, onOpen, onFav, checked }) {
             <div className="row-actions">
               <a className="sq-btn" href={v.url} target="_blank" rel="noopener noreferrer" onClick={stop} title="Открыть в магазине">↗</a>
               <button type="button" className={'sq-btn' + (fav ? ' on' : '')} aria-pressed={fav} title={fav ? 'Убрать из избранного' : 'В избранное'}
-                onClick={(e) => { stop(e); onFav(p.id); }}>{fav ? '♥' : '♡'}</button>
+                onClick={(e) => { stop(e); onFav(p); }}>{fav ? '♥' : '♡'}</button>
             </div>
           </div>
         );
