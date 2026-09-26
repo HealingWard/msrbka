@@ -16,6 +16,7 @@ function progressText(p) {
   if (!p) return 'ищу…';
   if (p.stage === 'human') return 'магазин просит проверку «не робот» — пройдите её в окне браузера';
   if (p.stage === 'details') return 'нашёл ' + p.found + ' · смотрю размеры и цвет ' + p.done + '/' + p.total;
+  if (p.stage === 'search' && p.page) return 'страница ' + p.page + ' · собрано ' + p.found + (p.total ? ' из ' + p.total : '');
   return 'открываю выдачу…';
 }
 

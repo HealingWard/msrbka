@@ -30,6 +30,11 @@ describe('parseQuery', () => {
   it('поддерживает «до 20к»', () => {
     expect(parseQuery('тренч до 20к').budget).toBe(20000);
   });
+  it('лоферы и другая обувь — категория «обувь»', () => {
+    expect(parseQuery('лоферы женские 40 размер черные или коричневые')).toMatchObject({ ds: 'shoes', size: '40', color: ['чёрный', 'коричневый'] });
+    expect(parseQuery('мокасины 38').ds).toBe('shoes');
+    expect(parseQuery('сапоги').ds).toBe('shoes');
+  });
   it('берёт тип из категорий, если в запросе его нет', () => {
     expect(parseQuery('что-нибудь белое', ['Обувь']).ds).toBe('shoes');
     expect(parseQuery('что-нибудь белое', ['Одежда']).ds).toBe('trench');
@@ -109,6 +114,7 @@ describe('живые товары', () => {
     expect(storeQuery({ q: 'белые кеды Veja, 38 размер, до 15 000', crit: { brands: ['Veja'] } })).toBe('белые кеды Veja');
     expect(storeQuery({ q: 'чёрный тренч 12 Storeez S до 30 000', crit: { brands: ['12 Storeez'] } })).toBe('чёрный тренч 12 Storeez');
     expect(storeQuery({ q: 'тренч M', crit: { brands: ['Mango'] } })).toBe('Mango тренч');
+    expect(storeQuery({ q: 'лоферы женские 40 размер черные или коричневые', crit: { brands: [], color: ['чёрный', 'коричневый'] } })).toBe('лоферы женские');
   });
   it('бренд и цвет берутся из названия, если магазин их не дал', () => {
     const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'https://www.lamoda.ru/p/x/', title: 'Тренч Gerry Weber бежевого цвета', price: 18990, inStock: true });

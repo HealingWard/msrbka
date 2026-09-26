@@ -39,5 +39,5 @@ function request(payload, { onProgress, signal, timeoutMs = 5 * 60000 } = {}) {
   });
 }
 
-export const extSearch = (store, query, opts) => request({ pricel: 'search', store, query, limit: 60 }, opts);
+export const extSearch = (store, query, opts) => request({ pricel: 'search', store, query, limit: 150 }, opts);
 export const extDetails = (url, opts) => request({ pricel: 'details', url }, { ...opts, timeoutMs: 90000 });

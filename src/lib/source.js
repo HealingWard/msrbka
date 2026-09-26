@@ -2,6 +2,7 @@
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extSearch, extensionVersion } from './extension.js';
+import { detectColors } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -18,6 +19,12 @@ export function storeQuery(run) {
   q = q.replace(/(^|[\s,])\d{2}\s*-?\s*(?:й\s*)?размер[а-я]*(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])размер[а-я]*\s*\d{2}(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])(?:xxs|xs|s|m|l|xl|xxl)(?=[\s,]|$)/gi, ' ');
+  // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — отправляем суть запроса,
+  // а цвета фильтрует сам «Прицел». Один цвет оставляем: он хорошо сужает выдачу магазина.
+  if ([].concat(run.crit.color || []).length > 1) {
+    q = q.replace(/(^|[\s,])(?:и|или|либо|цвет[а-я]*)(?=[\s,]|$)/gi, ' ');
+    q = q.split(/\s+/).filter((w) => !detectColors(w).length).join(' ');
+  }
   q = q.replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
   const brands = run.crit.brands || [];
   if (brands.length === 1 && !q.toLowerCase().includes(brands[0].toLowerCase())) q = brands[0] + ' ' + q;

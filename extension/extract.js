@@ -324,7 +324,10 @@
     if (!pp) return null;
     if (mode === 'search') {
       const list = pp.category?.products || pp.search?.products || pp.products;
-      return Array.isArray(list) ? list.map(stockmannItem).filter((x) => x && x.url && x.price) : null;
+      if (!Array.isArray(list)) return null;
+      const pg = pp.category?.pagination || {};
+      lastPage = { current: +pg.current || null, total: +pg.total || null, found: +pp.category?.productsCount || null };
+      return list.map(stockmannItem).filter((x) => x && x.url && x.price);
     }
     const it = pp.product ? stockmannItem(pp.product) : null;
     if (it) it.url = location.href.split(/[?#]/)[0];
@@ -382,7 +385,12 @@
   function lamodaExtract(mode) {
     const st = lamodaState();
     if (!st) return null;
-    if (mode === 'search') return Array.isArray(st.products) ? st.products.map(lamodaItem).filter((x) => x && x.title && x.price) : null;
+    if (mode === 'search') {
+      if (!Array.isArray(st.products)) return null;
+      const pg = st.pagination || {};
+      lastPage = { current: +pg.page || null, total: +pg.pages || null, found: +pg.found || null };
+      return st.products.map(lamodaItem).filter((x) => x && x.title && x.price);
+    }
     const it = st.product ? lamodaItem(st.product) : null;
     if (it) it.url = location.href.split(/[?#]/)[0];
     return it;
@@ -418,6 +426,8 @@
     await Promise.all(Array.from({ length: 6 }, worker));
     return items;
   }
+
+  let lastPage = null; // { current, total, found } — пагинация выдачи магазина
 
   function storeExtract(mode) {
     const h = location.hostname.replace(/^www\./, '');
@@ -458,7 +468,7 @@
       }, opts.timeoutMs || 25000);
       if (ready && ready.blocked) return { blocked: ready.blocked, items: [], url: location.href, title: document.title };
       const exact = storeExtract('search');
-      if (exact && exact.length) return { blocked: null, items: await inlineImages(exact), source: 'store', url: location.href, title: document.title };
+      if (exact && exact.length) return { blocked: null, items: await inlineImages(exact), page: lastPage, source: 'store', url: location.href, title: document.title };
       await sleep(800); // даём догрузиться ценам и картинкам
       window.scrollTo(0, document.body.scrollHeight / 2);
       await sleep(400);

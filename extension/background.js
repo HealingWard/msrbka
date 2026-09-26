@@ -7,11 +7,18 @@ const STORES = {
   stockmann: {
     name: 'Stockmann', host: 'stockmann.ru',
     search: (q) => 'https://stockmann.ru/search/?q=' + encodeURIComponent(q),
+    // Параметр страницы у Stockmann не документирован — пробуем варианты и проверяем номер страницы в данных.
+    page: (q, n, param) => 'https://stockmann.ru/search/?q=' + encodeURIComponent(q) + '&' + param + '=' + n,
+    pageParams: ['page', 'PAGEN_1'],
+    maxPages: 6,
     linkPattern: '^/(?:product|catalog/product|p)/[^/]+',
   },
   lamoda: {
     name: 'Lamoda', host: 'lamoda.ru',
     search: (q) => 'https://www.lamoda.ru/catalogsearch/result/?q=' + encodeURIComponent(q),
+    page: (q, n, param) => 'https://www.lamoda.ru/catalogsearch/result/?q=' + encodeURIComponent(q) + '&' + param + '=' + n,
+    pageParams: ['page'],
+    maxPages: 3,
     linkPattern: '^/p/[a-z0-9]{6,}/',
   },
 };
@@ -134,8 +141,36 @@ async function searchJob(storeId, query, limit, send) {
       const why = r.blocked === 'denied' ? 'магазин отклонил запрос' : 'проверка «не робот» не пройдена';
       return send({ pricel: 'result', status: 'blocked', items: [], error: why, searchUrl });
     }
-    let items = r.items.slice(0, limit || 40);
-    if (!items.length) return send({ pricel: 'result', status: 'empty', items: [], error: 'на странице не нашлось товаров', searchUrl });
+    if (!r.items.length) return send({ pricel: 'result', status: 'empty', items: [], error: 'на странице не нашлось товаров', searchUrl });
+
+    // Следующие страницы выдачи: пока есть новые товары и не набран лимит.
+    const max = limit || 150;
+    const seen = new Set(r.items.map((x) => x.url));
+    let all = r.items.slice();
+    let total = r.page?.total || null;
+    let param = null;
+    for (let n = 2; n <= (s.maxPages || 1) && all.length < max && (!total || n <= total); n++) {
+      send({ pricel: 'progress', stage: 'search', page: n, found: all.length, total: r.page?.found || null });
+      let fresh = null;
+      for (const p of param ? [param] : s.pageParams) {
+        await sleep(1200);
+        let pr = null;
+        try { pr = await visit(win, s.page(query, n, p), 'search', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { pr = null; }
+        if (!pr || pr.blocked || !pr.items?.length) continue;
+        // Магазин проигнорировал параметр и вернул первую страницу — пробуем другой.
+        if (pr.page?.current && pr.page.current !== n) continue;
+        const items = pr.items.filter((x) => !seen.has(x.url));
+        if (!items.length) continue;
+        param = p;
+        total = pr.page?.total || total;
+        fresh = items;
+        break;
+      }
+      if (!fresh) break;
+      fresh.forEach((x) => seen.add(x.url));
+      all = all.concat(fresh);
+    }
+    let items = all.slice(0, max);
 
     // Карточки открываем только для товаров, по которым выдача не дала размеров
     // (у Stockmann и Lamoda размеры, цвет и бренд обычно есть прямо в выдаче).
