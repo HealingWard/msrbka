@@ -13,19 +13,34 @@ export const STORE_NAMES = STORES.map((s) => s.name);
 const STOCKMANN_BRANDS = ['A + MORE','Airwool','Artie','Ash','BCONB','Be mine','Belucci','Benetton','Benetton Undercolors','Betty & Co','Betty Barclay','Blauer','Boboli','Bodyguard','Bogi','Bogi Accessories','BOSS','Braccialini','Brax','Bronx','Bugatti','Calvin Klein','Calvin Klein Jeans','Canoe','Cap Horn','Choupette','Cole Haan','Colorplay','Comma','Consliue','Converse','Crocs','Cube Co','cut pret','cut pret PLUS','D.Molina','Dare 2b','DeCoussart','Delsey','Desigual','Digel','Dirk Bikkembergs','Dixi Coat','Doppler','Dr Martens','Dustin','EA7','Eberhart','EDC','Esprit','Esprit Casual','Esprit Collection','Ever be','FILA','Freestyle','Gant','Geox','Gerry Weber','Gerry Weber Casual','Gioseppo','Green Coast','Guess','Guess Jeans','Hobbs','HUGO','iBlues','Icepeak','IDO','Imac','Jack & Jones','Juicy Couture','Jupiter','Karl Lagerfeld','Kerry','Kivat','Lasessor','Lassie','Lauren Ralph Lauren','Lee','Lerros','Levi\'s','Lindbergh','Losan','Love Moschino','Luhta','Manila Grace','Marc O\'Polo','Marc O\'Polo Denim','Marco di Radi','Marvelis','Maximo','Mayoral','Michael Michael Kors','Minelli','Molo','More & More','Mum of Six','Mursu','Name It','Napapijri','Nike','Noom','Norveg','Oasis','Odri Mio','Oldos','Olymp','Only','Only & Sons','Original Marines','OVS','Paola Ray','Peter Jorgen','Petit Bateau','Pierre Cardin','Pollini','Puma','Regatta','Reima','Reporter Young','Rinascimento','Robinzon','s.Oliver','Sabrina Scala','Samoon','Sand','Selected','Serefina','Shine Original','Silver Spoon Life','Silvian Heach','Steve Madden','Stockmann 1862','Superdry','Superfit','Taifun','Tommy Hilfiger','Tommy Jeans','Trussardi Jeans','Twinset','UGG','Ugo Carducci','United Nude','Vagabond','Valentino','Vero Moda','Viking','Warehouse','Woden','Wonders','Wool&Cotton','Андерсен','Эвантюэль',
  'COS','Massimo Dutti','Weekend Max Mara','Veja','New Balance'];
 
-export const BRANDS = [...new Set(['12 Storeez','Adidas','Befree','Ekonika','Lime','Love Republic','Mango',...STOCKMANN_BRANDS])].sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));
+// Бренды из меню Stockmann (сумки, аксессуары, обувь), которых нет в фильтрах одежды.
+const STOCKMANN_MENU_BRANDS = ['Furla','Coccinelle','Pinko','Moschino','Mellizos','Franco Vello','Auranna','Oulyss','Piquadro',
+ 'Emporio Armani','Cerruti 1881','Armani Exchange','Sandro','Allsaints','Ted Baker','Marc Jacobs','Maje','Hunter','Rich&Royal',
+ 'Diesel','Didriksons','C.P. Company','Autry','Dsquared2','Vivienne Westwood','MM6','Ferragamo','Versace','Alessandro Borelli',
+ 'DKNY','Lancaster','Kersten','Andrea Fontebasso','Emme Marella','Gioco','PlayToday','Kisu'];
+
+/** Ключ для сравнения брендов: без регистра, пробелов и знаков («Marc O’Polo» = «MARC O'POLO»). */
+export const brandKey = (b) => String(b || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, '');
+
+const dedupeBrands = (list) => {
+  const m = new Map();
+  for (const b of list) if (!m.has(brandKey(b))) m.set(brandKey(b), b);
+  return [...m.values()];
+};
+
+export const BRANDS = dedupeBrands(['12 Storeez','Adidas','Befree','Ekonika','Lime','Love Republic','Mango',...STOCKMANN_BRANDS,...STOCKMANN_MENU_BRANDS]).sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));
 
 // Бренды, которые встретились в фильтрах магазинов при поиске (Stockmann, Lamoda), — пополняют список выше.
-const brandKeys = new Set(BRANDS.map((b) => b.toLowerCase()));
+const brandKeys = new Set(BRANDS.map(brandKey));
 const learnedBrands = [];
 let allBrandsCache = BRANDS;
-/** Добавляет бренды в общий список (без учёта регистра). Возвращает число новых. */
+/** Добавляет бренды в общий список (без учёта регистра и знаков). Возвращает число новых. */
 export function addKnownBrands(list) {
   let added = 0;
   for (const raw of list || []) {
     const b = String(raw || '').replace(/\s+/g, ' ').trim();
-    if (!b || b.length > 60 || brandKeys.has(b.toLowerCase())) continue;
-    brandKeys.add(b.toLowerCase());
+    if (!b || b.length > 60 || !brandKey(b) || brandKeys.has(brandKey(b))) continue;
+    brandKeys.add(brandKey(b));
     learnedBrands.push(b);
     added++;
   }
