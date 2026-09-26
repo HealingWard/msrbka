@@ -149,6 +149,12 @@ describe('размеры', () => {
     expect(sizeNear('M', '46 RU')).toBe(true);
     expect(sizeNear('44 RU', 'm')).toBe(true);
     expect(sizeNear('M', '50 RU')).toBe(false);
+    expect(sizeEq('XS/42', 'XS')).toBe(true);
+    expect(sizeEq('XS/42', '42')).toBe(true);
+    expect(sizeEq('XS/42', 'M')).toBe(false);
+    expect(sizeNear('XS/42', 'M')).toBe(false);
+    expect(sizeNear('S/44', 'M')).toBe(false);
+    expect(sizeNear('46', 'M')).toBe(true);
   });
   it('товар с размерами RU остаётся в выдаче по M и помечается «≈»', () => {
     const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'u', title: 'Тренч', brand: 'Mango', price: 10000, sizes: ['42 RU', '46 RU'] });

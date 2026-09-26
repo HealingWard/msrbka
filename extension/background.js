@@ -122,8 +122,9 @@ async function searchJob(storeId, query, limit, send) {
     let items = r.items.slice(0, limit || 40);
     if (!items.length) return send({ pricel: 'result', status: 'empty', items: [], error: 'на странице не нашлось товаров', searchUrl });
 
-    // Карточки: размеры, цвет, бренд. Сначала из кэша, остальные — открываем по очереди.
-    const need = items.slice(0, DETAILS_LIMIT);
+    // Карточки открываем только для товаров, по которым выдача не дала размеров
+    // (у Stockmann и Lamoda размеры, цвет и бренд обычно есть прямо в выдаче).
+    const need = items.filter((x) => !x.detailed).slice(0, DETAILS_LIMIT);
     let done = 0;
     send({ pricel: 'progress', stage: 'details', done, total: need.length, found: items.length });
     const queue = [...need];

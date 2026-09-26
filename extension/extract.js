@@ -53,11 +53,16 @@
   const textOf = (el) => clean(el ? (el.innerText || el.textContent || '') : '');
 
   // ——— блокировка / капча ———
+  // Проверка считается активной, только если на экране её спиннер/капча и нет содержимого.
+  // (После прохождения проверки скрипт защиты остаётся на странице — по нему одному судить нельзя.)
+  const visible = (el) => { if (!el) return false; const r = el.getBoundingClientRect(); return r.width * r.height > 2500 && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none'; };
   function blockedState() {
-    const html = document.documentElement ? document.documentElement.outerHTML.slice(0, 20000) : '';
-    if (/servicepipe\.tech|<js-challenge-loader|get_cookie_spsn\(/i.test(html)) return 'challenge';
     if (/запрос отклонен|запрос отклонён|access denied/i.test(document.title)) return 'denied';
-    if (document.querySelector('iframe[src*="captcha"], #id_captcha_frame_div:not([style*="none"]), .smart-captcha, [class*="captcha"]')) return 'captcha';
+    const bodyText = (document.body?.innerText || '').trim().length;
+    const spinner = document.querySelector('js-challenge-loader, #id_spinner');
+    if (spinner && visible(spinner) && bodyText < 300) return 'challenge';
+    const cap = [...document.querySelectorAll('iframe[src*="captcha" i], #id_captcha_frame_div, .smart-captcha, [class*="captcha" i]')].find(visible);
+    if (cap && bodyText < 3000) return 'captcha';
     return null;
   }
 
@@ -162,7 +167,10 @@
   function stateProducts() {
     const blobs = [];
     for (const k of ['__NUXT__', '__NEXT_DATA__', '__INITIAL_STATE__', '__PRELOADED_STATE__', '__APOLLO_STATE__', '__STATE__', '__DATA__', '__APP_STATE__']) {
-      try { if (window[k] && typeof window[k] === 'object') blobs.push(window[k]); } catch { /* доступ запрещён */ }
+      try {
+        const v = window[k];
+        if (v && typeof v === 'object' && !(v instanceof Node) && !(v === window)) blobs.push(v);
+      } catch { /* доступ запрещён */ }
     }
     for (const s of document.querySelectorAll('script[type="application/json"]')) {
       try { blobs.push(JSON.parse(s.textContent)); } catch { /* не JSON */ }
@@ -172,11 +180,15 @@
     let visited = 0;
     const walk = (n, d) => {
       if (!n || typeof n !== 'object' || d > 30 || seen.has(n) || ++visited > 200000) return;
+      // Не заходим в DOM-узлы, окна и фреймы (чужие фреймы бросают SecurityError).
+      try { if (n instanceof Node || n === window || (typeof Window !== 'undefined' && n instanceof Window)) return; } catch { return; }
       seen.add(n);
-      if (Array.isArray(n)) { for (const x of n) walk(x, d + 1); return; }
-      const p = fromObject(n);
-      if (p) out.push(p);
-      for (const k in n) { const v = n[k]; if (v && typeof v === 'object') walk(v, d + 1); }
+      try {
+        if (Array.isArray(n)) { for (const x of n) walk(x, d + 1); return; }
+        const p = fromObject(n);
+        if (p) out.push(p);
+        for (const k in n) { const v = n[k]; if (v && typeof v === 'object') walk(v, d + 1); }
+      } catch { /* недоступное свойство — пропускаем */ }
     };
     for (const b of blobs) walk(b, 0);
     return out;
@@ -267,6 +279,124 @@
     return t && t.length < 40 ? t.replace(/^цвет:?\s*/i, '') : '';
   }
 
+  // ——— точный разбор для конкретных магазинов (по их встроенным данным) ———
+  // Stockmann (Next.js): <script id="__NEXT_DATA__"> — товары выдачи и карточка с размерами и наличием.
+  // Lamoda (Nuxt): window.__NUXT__.payload.state.payload — products[] в выдаче, product на карточке.
+  // Из данных берём только товары; остальное (в т. ч. сведения о покупателе) не читаем.
+
+  function nextData() {
+    // window.__NEXT_DATA__ может оказаться самим <script id="__NEXT_DATA__"> (элементы с id видны как свойства window).
+    try { const w = window.__NEXT_DATA__; if (w && typeof w === 'object' && !(w instanceof Element) && w.props) return w; } catch { /* нет */ }
+    const el = document.getElementById('__NEXT_DATA__');
+    try { return el ? JSON.parse(el.textContent) : null; } catch { return null; }
+  }
+  const smImage = (images) => {
+    const im = Array.isArray(images) ? images[0] : null;
+    return abs(im?.default?.jpg?.src2x || im?.default?.jpg?.src || (im?.source ? 'https://stockmann.ru' + im.source : null));
+  };
+  function stockmannItem(p) {
+    if (!p || !p.name) return null;
+    const cur = p.priceDiscount && p.priceDiscount < p.price ? p.priceDiscount : p.price;
+    const color = (p.colors || []).find((c) => c.checked) || (p.colors || [])[0];
+    const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+    // main — российский размер, second — размер бренда (EU/IT); для подбора нужен российский.
+    const label = (z) => clean(String(z.main || z.second || ''));
+    return {
+      url: abs(p.link || p.meta?.canonical || location.pathname),
+      title: clean(p.name),
+      brand: clean(typeof p.brand === 'string' ? p.brand : p.brand?.name || ''),
+      price: parsePrice(cur),
+      old: p.priceDiscount && p.priceDiscount < p.price ? parsePrice(p.price) : null,
+      image: smImage(p.images),
+      images: (p.images || []).slice(0, 6).map((im) => smImage([im])).filter(Boolean),
+      color: clean(color?.name || ''),
+      sizes: p.noSize ? ['без размера'] : sizes.filter((z) => z.available).map(label).filter(Boolean),
+      sizesOut: sizes.filter((z) => !z.available).map(label).filter(Boolean),
+      rating: parseNumber(p.rating),
+      reviews: parsePrice(p.reviewsCount),
+      inStock: p.available ?? p.isAvailable ?? null,
+      sku: String(p.xmlId || p.productId || ''),
+      detailed: sizes.length > 0 || !!p.noSize,
+    };
+  }
+  function stockmannExtract(mode) {
+    const pp = nextData()?.props?.pageProps?.pageProps;
+    if (!pp) return null;
+    if (mode === 'search') {
+      const list = pp.category?.products || pp.search?.products || pp.products;
+      return Array.isArray(list) ? list.map(stockmannItem).filter((x) => x && x.url && x.price) : null;
+    }
+    const it = pp.product ? stockmannItem(pp.product) : null;
+    if (it) it.url = location.href.split(/[?#]/)[0];
+    return it;
+  }
+
+  const LM_IMG = 'https://a.lmcdn.ru/img389x562';
+  function lamodaState() {
+    try { return window.__NUXT__?.payload?.state?.payload || null; } catch { return null; }
+  }
+  function lamodaSizes(sizes) {
+    const av = [], out = [];
+    for (const z of Array.isArray(sizes) ? sizes : []) {
+      const brand = clean(String(z.brand_size || z.brand_title || ''));
+      const ru = clean(String(z.size || (z.size_system === 'RUS' ? z.title : '') || ''));
+      // Буквенный размер бренда (M, XL, OneSize) показываем вместе с российским: «M/46».
+      // Числовой размер бренда (европейский, 38/44) не показываем — его легко спутать с российским.
+      const letter = /^(?:[2-5]?X{0,3}[SML]|XS|XXS|one ?size)$/i.test(brand);
+      const label = letter && ru ? brand + '/' + ru : ru || brand;
+      if (!label) continue;
+      const qty = z.stock_quantity;
+      const available = z.is_available ?? (qty != null ? qty > 0 : true);
+      (available ? av : out).push(label);
+    }
+    return { av, out };
+  }
+  function lamodaItem(p) {
+    if (!p || !p.sku) return null;
+    const title = clean(p.name || p.title || '');
+    const price = parsePrice(p.price_amount ?? p.price);
+    const old = parsePrice(p.old_price_amount ?? p.old_price);
+    const sz = lamodaSizes(p.sizes);
+    const colorsObj = p.colors;
+    const color = clean(p.color_family || (Array.isArray(colorsObj) ? colorsObj[0]?.title : colorsObj && Object.values(colorsObj)[0]) || '');
+    const rating = p.rating?.average_rating ?? p.average_rating;
+    const thumb = p.thumbnail || (p.gallery || [])[0];
+    return {
+      url: abs('/p/' + String(p.sku).toLowerCase() + '/' + (p.seo_tail || '') + (p.seo_tail ? '/' : '')),
+      title,
+      brand: clean(p.brand?.name || ''),
+      price,
+      old: old && price && old > price ? old : null,
+      image: thumb ? LM_IMG + thumb : null,
+      images: (p.gallery || []).slice(0, 6).map((g) => LM_IMG + g),
+      color,
+      sizes: sz.av,
+      sizesOut: sz.out,
+      rating: rating ? Math.round((rating > 5 ? rating / 20 : rating) * 10) / 10 : null,
+      reviews: parsePrice(p.rating?.reviews_count ?? p.reviews?.total ?? null),
+      inStock: p.is_in_stock ?? p.is_sellable ?? (sz.av.length ? true : null),
+      sku: p.sku,
+      detailed: sz.av.length + sz.out.length > 0,
+    };
+  }
+  function lamodaExtract(mode) {
+    const st = lamodaState();
+    if (!st) return null;
+    if (mode === 'search') return Array.isArray(st.products) ? st.products.map(lamodaItem).filter((x) => x && x.title && x.price) : null;
+    const it = st.product ? lamodaItem(st.product) : null;
+    if (it) it.url = location.href.split(/[?#]/)[0];
+    return it;
+  }
+
+  function storeExtract(mode) {
+    const h = location.hostname.replace(/^www\./, '');
+    try {
+      if (h.endsWith('stockmann.ru')) return stockmannExtract(mode);
+      if (h.endsWith('lamoda.ru')) return lamodaExtract(mode);
+    } catch { /* структура изменилась — дальше общий разбор */ }
+    return null;
+  }
+
   async function waitFor(check, timeoutMs) {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
@@ -288,10 +418,14 @@
       const ready = await waitFor(() => {
         const b = blockedState();
         if (b) return { blocked: b };
+        const exact = storeExtract('search');
+        if (exact && exact.length) return { exact: exact.length };
         const links = [...document.querySelectorAll('a[href]')].filter((a) => accept(abs(a.getAttribute('href')) || '')).length;
         return links >= 2 ? { links } : null;
       }, opts.timeoutMs || 25000);
       if (ready && ready.blocked) return { blocked: ready.blocked, items: [], url: location.href, title: document.title };
+      const exact = storeExtract('search');
+      if (exact && exact.length) return { blocked: null, items: exact, source: 'store', url: location.href, title: document.title };
       await sleep(800); // даём догрузиться ценам и картинкам
       window.scrollTo(0, document.body.scrollHeight / 2);
       await sleep(400);
@@ -309,6 +443,8 @@
     if (mode === 'product') {
       const ready = await waitFor(() => blockedState() ? { blocked: blockedState() } : (document.querySelector('h1') ? { ok: 1 } : null), opts.timeoutMs || 20000);
       if (ready && ready.blocked) return { blocked: ready.blocked };
+      const exact = storeExtract('product');
+      if (exact && exact.price) return { blocked: null, item: exact, source: 'store' };
       await sleep(1000);
       const here = key(location.href);
       const ld = jsonLd();
