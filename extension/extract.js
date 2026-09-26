@@ -316,6 +316,7 @@
       reviews: parsePrice(p.reviewsCount),
       inStock: p.available ?? p.isAvailable ?? null,
       sku: String(p.xmlId || p.productId || ''),
+      gender: clean(String(p.gender || '')),
       detailed: sizes.length > 0 || !!p.noSize,
     };
   }
@@ -381,6 +382,7 @@
       reviews: parsePrice(p.rating?.reviews_count ?? p.reviews?.total ?? null),
       inStock: p.is_in_stock ?? p.is_sellable ?? (sz.av.length ? true : null),
       sku: p.sku,
+      gender: clean(String(p.gender || '')),
       detailed: sz.av.length + sz.out.length > 0,
     };
   }

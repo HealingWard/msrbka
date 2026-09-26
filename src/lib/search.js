@@ -46,6 +46,23 @@ export function detectBrands(text) {
 // Аксессуары: размер для них не нужен.
 const ACC_RE = /сумк|сумоч|рюкзак|клатч|шоппер|кошел|портмоне|бумажник|картхолдер|визитниц|косметичк|ремень|ремн|шарф|платок|платк|палантин|очки|часы|зонт|украшен|серьг|браслет|колье|кулон|подвеск|кольц|брошь|бижутер|перчатк|варежк|кепк|берет|панам|шапк|аксессуар|чехол|брелок/;
 
+// ——— Для кого ———
+export const GENDER_LABEL = { women: 'женщинам', men: 'мужчинам', girls: 'девочкам', boys: 'мальчикам', kids: 'детям' };
+/** Пол из текста запроса: «женские», «для мужчин», «для девочки»… */
+export function detectGender(text) {
+  const low = norm(String(text || ''));
+  if (/(^|[^а-я])(девоч|для девоч)/.test(low)) return 'girls';
+  if (/(^|[^а-я])(мальч|для мальч)/.test(low)) return 'boys';
+  if (/(^|[^а-я])(детск|для дет|ребен)/.test(low)) return 'kids';
+  if (/(^|[^а-я])(женск|женщин|для женщин)/.test(low)) return 'women';
+  if (/(^|[^а-я])(мужск|мужчин|для мужчин)/.test(low)) return 'men';
+  return null;
+}
+const GENDER_OK = { women: ['women', 'unisex'], men: ['men', 'unisex'], kids: ['kids', 'girls', 'boys', 'unisex'], girls: ['girls', 'kids', 'unisex'], boys: ['boys', 'kids', 'unisex'] };
+/** Товар другого пола (если пол товара известен). */
+export const genderMismatch = (p, g) => !!g && !!p.gender && !(GENDER_OK[g] || [g]).includes(p.gender);
+const GENDER_ITEM = { women: 'женские', men: 'мужские', girls: 'для девочек', boys: 'для мальчиков', kids: 'детские', unisex: 'унисекс' };
+
 export const categoryLabel = (ds) => (ds === 'shoes' ? 'обувь' : ds === 'acc' ? 'аксессуары' : 'одежда');
 
 export function parseQuery(q, cats = []) {
@@ -73,7 +90,12 @@ export function parseQuery(q, cats = []) {
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.includes('Обувь') && !cats.includes('Одежда')) ds = 'shoes';
   else if (!/тренч|плащ|одежд|пальт|куртк/.test(low) && cats.length === 1 && cats[0] === 'Аксессуары') ds = 'acc';
 
-  return { color: colors.length ? colors : null, size, budget, brands, ds };
+  // Размер без слова «размер»: «лоферы 40», «платье 46» (не бюджет «до 40 000»).
+  if (!size && ds !== 'acc') {
+    const bare = low.replace(/до\s*\d[\d\s]*(к|тыс)?/g, ' ').match(/(^|[^\d])(3[3-9]|[45]\d|6[0-2])(?=[^\d]|$)/);
+    if (bare) size = bare[2];
+  }
+  return { color: colors.length ? colors : null, size, budget, brands, ds, gender: detectGender(q) };
 }
 
 /** Какие параметры нужно уточнить перед поиском. */
@@ -238,12 +260,10 @@ export function getResults(items, crit, filters, sort, opts = {}) {
   const sorter = SORTERS[sort] || SORTERS.match;
   const types = opts.types || [];
   let pool = baseProducts(items, crit);
-  let hidden = [];
-  if (types.length) {
-    const other = (p) => { const t = detectTypes(p.title); return t.length > 0 && !t.some((x) => types.includes(x)); };
-    hidden = pool.filter(other);
-    if (!opts.showOther) pool = pool.filter((p) => !other(p));
-  }
+  const otherType = (p) => { if (!types.length) return false; const t = detectTypes(p.title); return t.length > 0 && !t.some((x) => types.includes(x)); };
+  const otherGender = (p) => genderMismatch(p, crit.gender);
+  const hidden = pool.filter((p) => otherType(p) || otherGender(p));
+  if (!opts.showOther) pool = pool.filter((p) => !otherType(p) && !otherGender(p));
   const base = pool.map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
   const f = filters;
   const list = base.filter(({ p }) =>
@@ -253,8 +273,10 @@ export function getResults(items, crit, filters, sort, opts = {}) {
     (!f.colors.length || f.colors.includes(p.color)) &&
     (!f.min || p.price >= +f.min) &&
     (!f.max || p.price <= +f.max));
-  const hiddenTypes = [...new Set(hidden.flatMap((p) => detectTypes(p.title)))];
-  return { base, list, hidden: hidden.length, hiddenTypes };
+  // Почему скрыты: другой тип товара («брюки») и/или другой пол («мужские»).
+  const hiddenTypes = [...new Set(hidden.filter(otherType).flatMap((p) => detectTypes(p.title)))];
+  const hiddenGenders = [...new Set(hidden.filter(otherGender).map((p) => GENDER_ITEM[p.gender] || p.gender))];
+  return { base, list, hidden: hidden.length, hiddenTypes, hiddenGenders };
 }
 
 /** Чипы с параметрами поиска для шапки результатов и «Моих поисков». */
@@ -271,6 +293,7 @@ export function criteriaChips(c, stores, ds) {
   if (c.size) chips.push({ k: 'Размер', v: c.size });
   if (c.color) chips.push({ k: colorList(c.color).length > 1 ? 'Цвета' : 'Цвет', v: colorStr(c.color) });
   if (c.budget) chips.push({ k: 'Бюджет', v: 'до ' + rub(c.budget) });
+  if (c.gender) chips.push({ k: 'Для кого', v: GENDER_LABEL[c.gender] || c.gender });
   chips.push({ k: 'Магазины', v: stores.length === STORE_NAMES.length ? 'все ' + stores.length : stores.join(', ') });
   return chips;
 }
@@ -287,6 +310,7 @@ export function runToParams(run) {
   if (run.crit.size) sp.set('size', run.crit.size);
   if (run.crit.color) sp.set('color', colorList(run.crit.color).join(SEP));
   if (run.crit.budget) sp.set('budget', String(run.crit.budget));
+  if (run.crit.gender) sp.set('gender', run.crit.gender);
   return sp.toString();
 }
 
@@ -301,7 +325,10 @@ export function runFromParams(sp) {
     q,
     ds: ['shoes', 'acc'].includes(sp.get('ds')) ? sp.get('ds') : 'trench',
     stores,
-    crit: { brands: list('brands'), size: sp.get('size') || null, color: color.length ? color : null, budget },
+    crit: {
+      brands: list('brands'), size: sp.get('size') || null, color: color.length ? color : null, budget,
+      ...(GENDER_LABEL[sp.get('gender')] ? { gender: sp.get('gender') } : {}),
+    },
   };
 }
 

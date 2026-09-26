@@ -174,7 +174,7 @@ export function Results({ run }) {
   }, [filtersOpen]);
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
-  const { base, list, hidden, hiddenTypes } = useMemo(
+  const { base, list, hidden, hiddenTypes, hiddenGenders } = useMemo(
     () => getResults(items, run.crit, f, sort, { types, showOther }),
     [items, run.crit, f, sort, types, showOther],
   );
@@ -234,9 +234,12 @@ export function Results({ run }) {
           {hidden > 0 && (
             <div className="store-note" role="status">
               <span>
-                {showOther
-                  ? <>Показаны и товары другого типа ({hiddenTypes.join(', ')}): {hidden}.</>
-                  : <>Скрыто {countStr(hidden, PRODUCTS_F)} другого типа ({hiddenTypes.join(', ')}) — магазин нашёл их по похожим словам.</>}
+                {(() => {
+                  const why = [hiddenTypes.length ? 'другого типа (' + hiddenTypes.join(', ') + ')' : '', hiddenGenders.join(', ')].filter(Boolean).join('; ');
+                  return showOther
+                    ? <>Показаны и неподходящие товары ({countStr(hidden, PRODUCTS_F)}: {why}).</>
+                    : <>Скрыто {countStr(hidden, PRODUCTS_F)}: {why} — магазин нашёл их по похожим словам.</>;
+                })()}
               </span>
               <button type="button" className="link-btn underline" style={{ marginLeft: 'auto' }} onClick={() => setShowOther(!showOther)}>
                 {showOther ? 'Скрыть' : 'Показать'}

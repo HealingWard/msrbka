@@ -23,6 +23,7 @@ export function storeQueries(run) {
   q = q.replace(/(^|[\s,])\d{2}\s*-?\s*(?:й\s*)?размер[а-я]*(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])размер[а-я]*\s*\d{2}(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])(?:xxs|xs|s|m|l|xl|xxl)(?=[\s,]|$)/gi, ' ');
+  if (run.crit.size && /^\d{2}$/.test(run.crit.size)) q = q.replace(new RegExp('(^|[\\s,])' + run.crit.size + '(?=[\\s,]|$)', 'g'), ' ');
   // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — их фильтрует «Прицел».
   // Один цвет оставляем: он хорошо сужает выдачу магазина.
   if ([].concat(run.crit.color || []).length > 1) {
@@ -30,6 +31,9 @@ export function storeQueries(run) {
     q = q.split(/\s+/).filter((w) => !detectColors(w).length).join(' ');
   }
   const GENDER = /^(женск|мужск|детск|девоч|мальч|унисекс)/i;
+  // «Для кого» из настройки, если в тексте запроса пол не указан: так магазин сразу ищет в нужном разделе.
+  const GENDER_WORD = { women: 'женские', men: 'мужские', girls: 'для девочек', boys: 'для мальчиков', kids: 'детские' };
+  if (run.crit.gender && !q.split(/[\s,]+/).some((w) => GENDER.test(w)) && GENDER_WORD[run.crit.gender]) q += ' ' + GENDER_WORD[run.crit.gender];
   // «женские» и единственный цвет относятся ко всем вариантам, даже если написаны один раз.
   const shared = q.split(/[\s,]+/).filter((w) => GENDER.test(w) || detectColors(w).length);
   const brands = run.crit.brands || [];

@@ -3,7 +3,7 @@ import { PRODUCTS, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { categoryLabel, colorList, colorStr } from '../lib/search.js';
+import { GENDER_LABEL, categoryLabel, colorList, colorStr } from '../lib/search.js';
 import { BrandPicker, Tags } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
@@ -62,6 +62,7 @@ export function Clarify() {
   if (c.budget) known.push({ k: 'Бюджет', v: 'до ' + rub(c.budget) });
   if (c.size) known.push({ k: 'Размер', v: c.size });
   if (c.brands.length) known.push({ k: 'Бренд', v: c.brands.join(', '), t: c.brands.join(', ') });
+  if (c.gender) known.push({ k: 'Для кого', v: GENDER_LABEL[c.gender] || c.gender });
 
   const noStore = missing.includes('store') && !(ans.store || []).length;
   const noSize = missing.includes('size') && !ans.size && !(custom.size || '').trim();

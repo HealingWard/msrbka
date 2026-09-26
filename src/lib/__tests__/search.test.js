@@ -221,3 +221,29 @@ describe('тип товара', () => {
     expect(storeQueries({ q: 'брючный костюм женский M', crit: { brands: [] } })).toEqual(['брючный костюм женский', 'костюм женский']);
   });
 });
+
+describe('для кого', () => {
+  it('пол из запроса', async () => {
+    const { detectGender } = await import('../search.js');
+    expect(detectGender('лоферы женские 40')).toBe('women');
+    expect(detectGender('костюм для мужчин')).toBe('men');
+    expect(detectGender('куртка для девочки')).toBe('girls');
+    expect(detectGender('бежевый тренч')).toBe(null);
+    expect(parseQuery('брючный костюм женский M').gender).toBe('women');
+  });
+  it('товары другого пола скрываются, унисекс и неизвестный пол остаются', () => {
+    const mk = (id, g) => liveItem({ id, store: 'Stockmann', url: 'u' + id, title: 'Тренч', price: 10000, gender: g });
+    const items = [mk('1', 'woman'), mk('2', 'man'), mk('3', 'boy'), mk('4', 'unisex'), mk('5', '')];
+    const r = getResults(items, { brands: [], gender: 'women' }, emptyFilters(), 'match', {});
+    expect(r.base.map((x) => x.p.id)).toEqual(['1', '4', '5']);
+    expect(r.hidden).toBe(2);
+    expect(r.hiddenGenders).toEqual(['мужские', 'для мальчиков']);
+    expect(r.hiddenTypes).toEqual([]);
+  });
+  it('пол из настройки добавляется к запросу в магазин', () => {
+    expect(parseQuery('лоферы 40').size).toBe('40');
+    expect(parseQuery('тренч до 40 000').size).toBe(null);
+    expect(storeQueries({ q: 'лоферы 40', crit: { brands: [], gender: 'women', size: '40' } })).toEqual(['лоферы женские']);
+    expect(storeQueries({ q: 'лоферы мужские 43', crit: { brands: [], gender: 'men', size: '43' } })).toEqual(['лоферы мужские']);
+  });
+});

@@ -28,6 +28,18 @@ export function idFor(storeName, url) {
   return (st?.id || 'x') + ':' + (sku || url);
 }
 
+/** Пол товара из данных магазина: women | men | girls | boys | kids | unisex | ''. */
+export function normGender(g) {
+  const x = String(g || '').toLowerCase();
+  if (/^(woman|women|female|w|жен)/.test(x)) return 'women';
+  if (/^(man|men|male|m|муж)/.test(x)) return 'men';
+  if (/^(girl|дев)/.test(x)) return 'girls';
+  if (/^(boy|мал)/.test(x)) return 'boys';
+  if (/^(kid|child|дет|baby|infant)/.test(x)) return 'kids';
+  if (/^(unisex|уни)/.test(x)) return 'unisex';
+  return '';
+}
+
 const stockLabel = (inStock) => (inStock === false ? 'Нет в наличии' : inStock === true ? 'В наличии' : null);
 
 /** Товар из ответа сервера → модель сайта; бренд и цвет дополняются из названия, если магазин их не дал. */
@@ -40,6 +52,7 @@ export function liveItem(raw) {
     image: raw.image || null, images: raw.images || [], rating: raw.rating || null, reviews: raw.reviews || null,
     sizes: raw.sizes || [], sizesOut: raw.sizesOut || [], color, stock: stockLabel(raw.inStock), kind: '', demo: false,
     detailed: !!raw.detailed,
+    gender: normGender(raw.gender),
   };
 }
 
@@ -47,5 +60,5 @@ export function liveItem(raw) {
 export const snapshot = (p) => ({
   id: p.id, store: p.store, url: p.url, title: p.title, brand: p.brand, price: p.price, old: p.old,
   image: p.image, rating: p.rating, reviews: p.reviews, sizes: p.sizes, sizesOut: p.sizesOut, color: p.color, stock: p.stock, kind: p.kind,
-  demo: p.demo, detailed: p.detailed,
+  demo: p.demo, detailed: p.detailed, gender: p.gender,
 });
