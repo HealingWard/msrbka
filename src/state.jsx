@@ -6,6 +6,7 @@ import { runKey, runToParams } from './lib/search.js';
 import { isLive } from './lib/config.js';
 import { DEMO_BY_ID, snapshot } from './lib/items.js';
 import { addKnownBrands } from './data/catalog.js';
+import { extBrands, extensionVersion } from './lib/extension.js';
 
 const DAY = 86400000;
 const ago = (days, h = 12, m = 0) => {
@@ -54,6 +55,24 @@ export function AppProvider({ children }) {
   const learnBrands = useCallback((list) => {
     if (addKnownBrands(list)) setLearned((cur) => [...new Set([...cur, ...list.map((b) => String(b).trim()).filter(Boolean)])].slice(-3000));
   }, [setLearned]);
+  // Раз в неделю расширение забирает полный список брендов со страницы «Все бренды» Stockmann.
+  useEffect(() => {
+    if (!isLive()) return undefined;
+    const KEY = 'pricel:brandsSync';
+    let last = 0;
+    try { last = +localStorage.getItem(KEY) || 0; } catch { /* нет хранилища */ }
+    if (Date.now() - last < 7 * DAY) return undefined;
+    let stop = false;
+    extensionVersion().then((v) => {
+      if (!v || stop) return null;
+      return extBrands('stockmann').then((r) => {
+        if (stop || !r || !r.brands || !r.brands.length) return;
+        learnBrands(r.brands);
+        if (r.status === 'ok') try { localStorage.setItem(KEY, String(Date.now())); } catch { /* нет хранилища */ }
+      });
+    }).catch(() => {});
+    return () => { stop = true; };
+  }, [learnBrands]);
   const notify = useCallback((msg) => setToast(msg), []);
   const clearToast = useCallback(() => setToast(null), []);
 

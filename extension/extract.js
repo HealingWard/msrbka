@@ -329,7 +329,8 @@
       const pg = pp.category?.pagination || {};
       lastPage = { current: +pg.current || null, total: +pg.total || null, found: +pp.category?.productsCount || null };
       const bf = (pp.category?.filters || []).find((f) => f && (f.id === 'BRAND' || f.type === 'brands'));
-      lastBrands = (bf?.values || []).map((v) => clean(v?.name || '')).filter(Boolean);
+      // Бренды из фильтра выдачи + бренды из меню сайта (там, например, Coccinelle и Furla в «Сумках»).
+      lastBrands = [...(bf?.values || []).map((v) => clean(v?.name || '')).filter(Boolean), ...pageBrands()];
       return list.map(stockmannItem).filter((x) => x && x.url && x.price);
     }
     const it = pp.product ? stockmannItem(pp.product) : null;
@@ -433,6 +434,35 @@
     return items;
   }
 
+  // Все бренды, упомянутые на странице: объекты { name, url: '/brands/…/' } в данных Next.js
+  // (меню, страница «Все бренды») и ссылки на страницы брендов в разметке.
+  const BRAND_URL = /^\/brands?\/[^/?#]+\/?(?:[?#].*)?$/i;
+  const NOT_BRAND = /^(все бренды|бренды|brands|все)$/i;
+  function pageBrands() {
+    const out = new Map();
+    const add = (name) => {
+      const n = clean(String(name || '')).replace(/\s*\(\d+\)$/, '');
+      if (!n || n.length > 40 || NOT_BRAND.test(n) || /^\d+$/.test(n)) return;
+      if (!out.has(n.toLowerCase())) out.set(n.toLowerCase(), n);
+    };
+    const seen = new Set();
+    const walk = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 14 || seen.has(o)) return;
+      seen.add(o);
+      if (Array.isArray(o)) { for (const x of o) walk(x, depth + 1); return; }
+      const link = o.url || o.link || o.href;
+      if (typeof o.name === 'string' && typeof link === 'string' && BRAND_URL.test(link.replace(/^https?:\/\/[^/]+/, ''))) add(o.name);
+      for (const k in o) if (o[k] && typeof o[k] === 'object') walk(o[k], depth + 1);
+    };
+    try { walk(nextData(), 0); } catch { /* нет данных Next.js */ }
+    for (const a of document.querySelectorAll('a[href]')) {
+      let path = '';
+      try { path = new URL(a.getAttribute('href'), location.href).pathname; } catch { continue; }
+      if (BRAND_URL.test(path)) add(textOf(a) || a.getAttribute('title'));
+    }
+    return [...out.values()];
+  }
+
   let lastPage = null; // { current, total, found } — пагинация выдачи магазина
   let lastBrands = []; // бренды из фильтров магазина по этому запросу
 
@@ -463,6 +493,18 @@
     if (mode === 'html') return { html: document.documentElement.outerHTML, url: location.href, title: document.title };
     // Быстрый опрос: идёт ли ещё проверка «не робот» (для ожидания, пока её проходит человек).
     if (mode === 'state') return { blocked: blockedState(), ready: document.readyState === 'complete' };
+    // Список брендов магазина (страница «Все бренды»).
+    if (mode === 'brands') {
+      const ready = await waitFor(() => {
+        const b = blockedState();
+        if (b) return { blocked: b };
+        const list = pageBrands();
+        return list.length >= 30 ? { list } : null;
+      }, opts.timeoutMs || 20000);
+      if (ready && ready.blocked) return { blocked: ready.blocked, brands: [] };
+      await sleep(600);
+      return { blocked: null, brands: pageBrands(), url: location.href };
+    }
 
     if (mode === 'search') {
       const ready = await waitFor(() => {

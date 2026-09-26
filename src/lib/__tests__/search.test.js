@@ -217,6 +217,13 @@ describe('тип товара', () => {
     expect(r.hiddenTypes).toEqual(['брюки', 'жакет']);
     expect(getResults(items, { brands: [] }, emptyFilters(), 'match', { types: ['костюм'], showOther: true }).base.length).toBe(4);
   });
+  it('в выдаче сумок не остаются головные уборы и другие аксессуары', () => {
+    const mk = (id, title) => liveItem({ id, store: 'Stockmann', url: 'u' + id, title, price: 10000 });
+    const items = [mk('1', 'Сумка (хобо)'), mk('2', 'Бейсболка вельветовая'), mk('3', 'Шапка из шерсти и кашемира'),
+      mk('4', 'Галстук шелковый'), mk('5', 'Кроссбоди'), mk('6', 'Ремень для сумки')];
+    const r = getResults(items, { brands: [] }, emptyFilters(), 'match', { types: detectTypes('сумка') });
+    expect(r.base.map((x) => x.p.title).sort()).toEqual(['Кроссбоди', 'Сумка (хобо)']);
+  });
   it('запрос с «брючный» дополняется запросом по главному слову', () => {
     expect(storeQueries({ q: 'брючный костюм женский M', crit: { brands: [] } })).toEqual(['брючный костюм женский', 'костюм женский']);
   });

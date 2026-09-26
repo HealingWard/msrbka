@@ -12,6 +12,7 @@ const STORES = {
     pageParams: ['page', 'PAGEN_1'],
     maxPages: 6,
     linkPattern: '^/(?:product|catalog/product|p)/[^/]+',
+    brands: ['https://stockmann.ru/brands/', 'https://stockmann.ru/brands/?role=women'],
   },
   lamoda: {
     name: 'Lamoda', host: 'lamoda.ru',
@@ -224,6 +225,38 @@ async function detailsJob(url, send) {
   }
 }
 
+const BRANDS_TTL = 7 * 86400e3;
+
+/** Полный список брендов магазина со страницы «Все бренды» (кэш на неделю). */
+async function brandsJob(storeId, force, send) {
+  const s = STORES[storeId];
+  if (!s || !s.brands) return send({ pricel: 'result', status: 'error', brands: [], error: 'у магазина нет списка брендов' });
+  const k = 'brands:' + storeId;
+  const cached = (await chrome.storage.local.get(k))[k];
+  if (!force && cached && Date.now() - cached.t < BRANDS_TTL) return send({ pricel: 'result', status: 'ok', brands: cached.list, cached: true });
+  const win = await openWindow();
+  try {
+    const all = new Map();
+    let blocked = null;
+    for (const url of s.brands) {
+      let r = null;
+      try { r = await visit(win, url, 'brands', { host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { r = null; }
+      if (r?.blocked) { blocked = r.blocked; break; }
+      for (const b of r?.brands || []) if (!all.has(b.toLowerCase())) all.set(b.toLowerCase(), b);
+      if (all.size >= 150) break; // на общей странице уже все бренды
+      await sleep(800);
+    }
+    const list = [...all.values()].slice(0, 5000);
+    if (list.length) await chrome.storage.local.set({ [k]: { t: Date.now(), list } });
+    if (!list.length) return send({ pricel: 'result', status: blocked ? 'blocked' : 'empty', brands: cached?.list || [], error: blocked ? 'проверка «не робот» не пройдена' : 'на странице брендов ничего не нашлось' });
+    send({ pricel: 'result', status: 'ok', brands: list });
+  } catch (e) {
+    send({ pricel: 'result', status: 'error', brands: cached?.list || [], error: String(e.message || e) });
+  } finally {
+    await closeWindow(win);
+  }
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'pricel') return;
   let alive = true;
@@ -232,6 +265,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((m) => {
     if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.limit, send);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
+    else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
   });
 });
 
