@@ -41,8 +41,12 @@ export function createApp({
         const r = await throttle.run(storeId, () => searchStore(store, q, { fetchImpl }));
         const now = Date.now();
         for (const it of r.items) history.record(it, now);
-        const out = { store: store.name, storeId, status: 'ok', items: r.items, sources: r.sources, searchUrl: r.url, checkedAt: now, tookMs: now - t0 };
-        cache.set(key, out);
+        const empty = !r.items.length;
+        const out = {
+          store: store.name, storeId, status: empty ? 'empty' : 'ok', items: r.items, sources: r.sources, searchUrl: r.url, checkedAt: now, tookMs: now - t0,
+          error: empty ? 'на странице магазина не удалось распознать товары' : null,
+        };
+        cache.set(key, out, empty ? 2 * 60000 : undefined);
         log.info?.(`search ${storeId} «${q}»: ${r.items.length} (ld ${r.sources.jsonld}, js ${r.sources.embedded}, dom ${r.sources.dom}) ${now - t0}ms`);
         return out;
       } catch (e) {
