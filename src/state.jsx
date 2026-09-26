@@ -5,6 +5,7 @@ import { navigate } from './lib/router.js';
 import { runKey, runToParams } from './lib/search.js';
 import { isLive } from './lib/config.js';
 import { DEMO_BY_ID, snapshot } from './lib/items.js';
+import { addKnownBrands } from './data/catalog.js';
 
 const DAY = 86400000;
 const ago = (days, h = 12, m = 0) => {
@@ -47,6 +48,12 @@ export function AppProvider({ children }) {
   // Выдача по магазинам для последних поисков: key → { at, stores: { [магазин]: { status, items, error, searchUrl } } }
   const [results, setResults] = usePersistentState('results', {}, 'session');
   const [toast, setToast] = useState(null);
+  // Бренды, которые встретились в фильтрах магазинов или добавлены вручную, — пополняют список выбора.
+  const [learned, setLearned] = usePersistentState('brands', []);
+  useState(() => addKnownBrands(learned));
+  const learnBrands = useCallback((list) => {
+    if (addKnownBrands(list)) setLearned((cur) => [...new Set([...cur, ...list.map((b) => String(b).trim()).filter(Boolean)])].slice(-3000));
+  }, [setLearned]);
   const notify = useCallback((msg) => setToast(msg), []);
   const clearToast = useCallback(() => setToast(null), []);
 
@@ -131,10 +138,10 @@ export function AppProvider({ children }) {
   }, [setColls, setFavs]);
 
   const value = useMemo(() => ({
-    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast,
+    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
     runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, setQuery, setPending, setLastRun, setPref,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, setQuery, setPending, setLastRun, setPref,
     setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -14,6 +14,26 @@ const STOCKMANN_BRANDS = ['A + MORE','Airwool','Artie','Ash','BCONB','Be mine','
  'COS','Massimo Dutti','Weekend Max Mara','Veja','New Balance'];
 
 export const BRANDS = [...new Set(['12 Storeez','Adidas','Befree','Ekonika','Lime','Love Republic','Mango',...STOCKMANN_BRANDS])].sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));
+
+// Бренды, которые встретились в фильтрах магазинов при поиске (Stockmann, Lamoda), — пополняют список выше.
+const brandKeys = new Set(BRANDS.map((b) => b.toLowerCase()));
+const learnedBrands = [];
+let allBrandsCache = BRANDS;
+/** Добавляет бренды в общий список (без учёта регистра). Возвращает число новых. */
+export function addKnownBrands(list) {
+  let added = 0;
+  for (const raw of list || []) {
+    const b = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!b || b.length > 60 || brandKeys.has(b.toLowerCase())) continue;
+    brandKeys.add(b.toLowerCase());
+    learnedBrands.push(b);
+    added++;
+  }
+  if (added) allBrandsCache = [...BRANDS, ...learnedBrands].sort((a,b)=>a.localeCompare(b,'ru',{sensitivity:'base'}));
+  return added;
+}
+export const allBrands = () => allBrandsCache;
+export const learnedBrandList = () => learnedBrands.slice();
 export const CATS=['Одежда','Обувь','Аксессуары','Товары для дома'];
 export const HEX={'бежевый':'#D8C3A0','молочный':'#F0EADC','песочный':'#CDB48A','кэмел':'#B8894F','кремовый':'#EDE3CC','хаки':'#8A8664','чёрный':'#1E1E1E','белый':'#FBFBF8','серый':'#9A9A96','синий':'#2F4A7A','тёмно-синий':'#1F2B45','шоколадный':'#5A3A28','коричневый':'#7A5234','графитовый':'#4A4B4F'};
 export const NEAR={'бежевый':['песочный','молочный','кэмел','кремовый'],'белый':['молочный','кремовый'],'чёрный':['серый'],'молочный':['белый','кремовый','бежевый'],'серый':['графитовый'],'песочный':['бежевый','кэмел'],'синий':['тёмно-синий'],'тёмно-синий':['синий'],'шоколадный':['коричневый','кэмел'],'коричневый':['шоколадный','кэмел'],'графитовый':['серый','чёрный']};

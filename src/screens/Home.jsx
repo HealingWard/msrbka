@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BRANDS, CATS, STORES, STORE_NAMES } from '../data/catalog.js';
+import { CATS, STORES, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { STORES_F, countStr, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { missingCriteria, parseQuery } from '../lib/search.js';
@@ -47,9 +47,10 @@ export function Home() {
     const q = query.trim();
     if (!q) return;
     const p = parseQuery(q, cats);
-    const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget };
-    let missing = missingCriteria(crit);
-    if (!prefs.askClarify) missing = crit.size ? [] : ['size'];
+    const gender = p.gender || (prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
+    const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget, ...(gender ? { gender } : {}) };
+    let missing = missingCriteria(crit, p.ds);
+    if (!prefs.askClarify) missing = crit.size || p.ds === 'acc' ? [] : ['size'];
     if (!selStores.length || missing.length) {
       // Вопрос о магазинах показываем всегда — с уже отмеченными вариантами.
       missing = ['store', ...missing];
@@ -71,7 +72,7 @@ export function Home() {
           placeholder="Например, бежевый тренч до 25 000" autoFocus />
         <div className="searchbox-bar">
           <StorePicker selected={selStores} onChange={(v) => setPref('selStores', v)} />
-          <BrandPicker brands={BRANDS} selected={selBrands} label={brandsLabel}
+          <BrandPicker brands={allBrands()} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
               <div className="dd-foot">
@@ -85,6 +86,13 @@ export function Home() {
         </div>
       </form>
       <div className="cat-row">
+        <span className="label">Для кого</span>
+        {[['women', 'Женщинам'], ['men', 'Мужчинам'], ['any', 'Всем']].map(([k, l]) => {
+          const on = (prefs.gender || 'any') === k;
+          return <button key={k} type="button" aria-pressed={on} className={'chip' + (on ? ' on' : '')} onClick={() => setPref('gender', k)}>{l}</button>;
+        })}
+      </div>
+      <div className="cat-row" style={{ marginTop: 10 }}>
         <span className="label">Категории</span>
         {CATS.map((c) => (
           <button key={c} type="button" aria-pressed={cats.includes(c)} className={'chip' + (cats.includes(c) ? ' on' : '')}

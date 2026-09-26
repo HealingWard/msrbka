@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ALLSIZES, HEX } from '../data/catalog.js';
 import { PRODUCTS_F, STORES_F, countStr, fmt, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { criteriaChips, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
+import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
 import { searchOne } from '../lib/source.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { ProductCard, ProductTable } from '../components/ProductCard.jsx';
@@ -131,20 +131,27 @@ export function Results({ run }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [progress, setProgress] = useState({});
+  const [showOther, setShowOther] = useState(false);
+  const types = useMemo(() => detectTypes(run.q), [run.q]);
 
   const entry = app.results[key];
   const missing = run.stores.filter((n) => !entry?.stores?.[n]);
   const loading = missing.length > 0;
 
   // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
-  const { setStoreResult, setLastRun } = app;
+  const { setStoreResult, setLastRun, learnBrands } = app;
   const missingKey = missing.join('|');
   useEffect(() => {
     if (!missingKey) return undefined;
     const ctrl = new AbortController();
     missingKey.split('|').forEach((name, i) => {
       searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); })
-        .then((res) => { if (!ctrl.signal.aborted) setStoreResult(key, name, res); })
+        .then((res) => {
+          if (ctrl.signal.aborted) return;
+          if (res.brands && res.brands.length) learnBrands(res.brands);
+          const { brands: _b, ...rest } = res;
+          setStoreResult(key, name, rest);
+        })
         .catch(() => { /* отменено */ });
     });
     return () => ctrl.abort();
@@ -167,7 +174,10 @@ export function Results({ run }) {
   }, [filtersOpen]);
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
-  const { base, list } = useMemo(() => getResults(items, run.crit, f, sort), [items, run.crit, f, sort]);
+  const { base, list, hidden, hiddenTypes, hiddenGenders } = useMemo(
+    () => getResults(items, run.crit, f, sort, { types, showOther }),
+    [items, run.crit, f, sort, types, showOther],
+  );
 
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
@@ -219,6 +229,21 @@ export function Results({ run }) {
                     : <a href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>}
                 </div>
               ))}
+            </div>
+          )}
+          {hidden > 0 && (
+            <div className="store-note" role="status">
+              <span>
+                {(() => {
+                  const why = [hiddenTypes.length ? 'другого типа (' + hiddenTypes.join(', ') + ')' : '', hiddenGenders.join(', ')].filter(Boolean).join('; ');
+                  return showOther
+                    ? <>Показаны и неподходящие товары ({countStr(hidden, PRODUCTS_F)}: {why}).</>
+                    : <>Скрыто {countStr(hidden, PRODUCTS_F)}: {why} — магазин нашёл их по похожим словам.</>;
+                })()}
+              </span>
+              <button type="button" className="link-btn underline" style={{ marginLeft: 'auto' }} onClick={() => setShowOther(!showOther)}>
+                {showOther ? 'Скрыть' : 'Показать'}
+              </button>
             </div>
           )}
           <div className="toolbar">

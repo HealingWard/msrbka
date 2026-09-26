@@ -2,7 +2,7 @@
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extSearch, extensionVersion } from './extension.js';
-import { detectColors } from './search.js';
+import { CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -23,6 +23,7 @@ export function storeQueries(run) {
   q = q.replace(/(^|[\s,])\d{2}\s*-?\s*(?:й\s*)?размер[а-я]*(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])размер[а-я]*\s*\d{2}(?=[\s,]|$)/gi, ' ');
   q = q.replace(/(^|[\s,])(?:xxs|xs|s|m|l|xl|xxl)(?=[\s,]|$)/gi, ' ');
+  if (run.crit.size && /^\d{2}$/.test(run.crit.size)) q = q.replace(new RegExp('(^|[\\s,])' + run.crit.size + '(?=[\\s,]|$)', 'g'), ' ');
   // Несколько цветов («черные или коричневые») поиск магазина понимает плохо — их фильтрует «Прицел».
   // Один цвет оставляем: он хорошо сужает выдачу магазина.
   if ([].concat(run.crit.color || []).length > 1) {
@@ -30,6 +31,9 @@ export function storeQueries(run) {
     q = q.split(/\s+/).filter((w) => !detectColors(w).length).join(' ');
   }
   const GENDER = /^(женск|мужск|детск|девоч|мальч|унисекс)/i;
+  // «Для кого» из настройки, если в тексте запроса пол не указан: так магазин сразу ищет в нужном разделе.
+  const GENDER_WORD = { women: 'женские', men: 'мужские', girls: 'для девочек', boys: 'для мальчиков', kids: 'детские' };
+  if (run.crit.gender && !q.split(/[\s,]+/).some((w) => GENDER.test(w)) && GENDER_WORD[run.crit.gender]) q += ' ' + GENDER_WORD[run.crit.gender];
   // «женские» и единственный цвет относятся ко всем вариантам, даже если написаны один раз.
   const shared = q.split(/[\s,]+/).filter((w) => GENDER.test(w) || detectColors(w).length);
   const brands = run.crit.brands || [];
@@ -47,6 +51,12 @@ export function storeQueries(run) {
       if (brands.length === 1 && !part.toLowerCase().includes(brands[0].toLowerCase())) part = brands[0] + ' ' + part;
       return part;
     });
+  // «брючный костюм»: поиск магазина находит брюки — добавляем запрос по главному слову («костюм»).
+  for (const part of [...parts]) {
+    if (!CONFUSING_ADJ.test(' ' + part + ' ')) continue;
+    const core = part.split(/\s+/).filter((w) => !CONFUSING_ADJ.test(' ' + w + ' ')).join(' ').trim();
+    if (detectTypes(core).length) parts.push(core);
+  }
   const uniq = [...new Set(parts.map((x) => x.toLowerCase()))].map((l) => parts.find((x) => x.toLowerCase() === l));
   if (!uniq.length) {
     const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -91,12 +101,14 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const searchUrl = store.search + encodeURIComponent(queries[0]);
     if (!(await extensionVersion())) return { status: 'noext', items: [], error: NOEXT_ERROR, searchUrl };
     const byUrl = new Map();
+    const brands = new Set();
     const statuses = [];
     for (let i = 0; i < queries.length; i++) {
       try {
         const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i] });
         const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, limit: Math.floor(150 / queries.length) });
         statuses.push(r);
+        for (const b of r.brands || []) brands.add(b);
         for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
       } catch (e) {
         if (e.name === 'AbortError') throw e;
@@ -109,7 +121,7 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const first = statuses.find((r) => r.status !== 'ok') || statuses[0] || {};
     return {
       status: ok ? 'ok' : first.status || 'error', items, error: ok ? null : first.error || null,
-      searchUrl: statuses[0]?.searchUrl || searchUrl, queries,
+      searchUrl: statuses[0]?.searchUrl || searchUrl, queries, brands: [...brands],
     };
   }
   if (!isLive()) {

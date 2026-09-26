@@ -197,7 +197,7 @@ async function searchJob(storeId, query, limit, send) {
     };
     await Promise.all(Array.from({ length: DETAILS_PARALLEL }, worker));
     items = items.map((x) => ({ ...x, store: s.name, storeId }));
-    send({ pricel: 'result', status: 'ok', items, searchUrl });
+    send({ pricel: 'result', status: 'ok', items, searchUrl, brands: (r.brands || []).slice(0, 2000) });
   } catch (e) {
     send({ pricel: 'result', status: 'error', items: [], error: String(e.message || e), searchUrl });
   } finally {

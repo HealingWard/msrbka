@@ -53,7 +53,7 @@ export function useDismiss(open, onClose) {
 }
 
 /** Выпадающий список с чекбоксами и поиском — для брендов. */
-export function BrandPicker({ brands, selected, onToggle, footer, meta, wide, label, emptyLabel }) {
+export function BrandPicker({ brands, selected, onToggle, onAdd, footer, meta, wide, label, emptyLabel }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const close = () => setOpen(false);
@@ -71,7 +71,12 @@ export function BrandPicker({ brands, selected, onToggle, footer, meta, wide, la
             {list.map((b) => (
               <CheckRow key={b} on={selected.includes(b)} label={b} meta={meta ? meta(b) : null} onClick={() => onToggle(b)} />
             ))}
-            {!list.length && <div className="dd-empty">Ничего не нашлось</div>}
+            {q.trim().length >= 2 && !brands.some((b) => b.toLowerCase() === q.trim().toLowerCase()) && (
+              <button type="button" className="checkbox-row" onClick={() => { const b = q.trim(); onAdd?.([b]); onToggle(b); setQ(''); }}>
+                <span className="box" aria-hidden="true">+</span><span className="label">Добавить бренд «{q.trim()}»</span>
+              </button>
+            )}
+            {!list.length && q.trim().length < 2 && <div className="dd-empty">Ничего не нашлось</div>}
           </div>
           {footer && footer(close)}
         </div>
