@@ -59,6 +59,19 @@ async function extract(tabId, mode, opts) {
   return res?.result;
 }
 
+/** Ждёт, пока человек пройдёт проверку «не робот» во вкладке (до 3 минут). Переживает перезагрузки страницы. */
+async function waitHuman(tabId, timeoutMs = 180000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    await sleep(1500);
+    try { await chrome.tabs.get(tabId); } catch { return false; } // вкладку закрыли
+    let st;
+    try { st = await extract(tabId, 'state', {}); } catch { continue; } // страница перезагружается
+    if (st && st.ready && !st.blocked) return true;
+  }
+  return false;
+}
+
 /** Открывает url во вкладке окна и разбирает. Если магазин показывает проверку — просит пользователя её пройти. */
 async function visit(windowId, url, mode, opts, onNeedHuman) {
   const tab = await chrome.tabs.create({ windowId, url, active: false });
@@ -66,13 +79,15 @@ async function visit(windowId, url, mode, opts, onNeedHuman) {
     await waitLoaded(tab.id);
     let r = await extract(tab.id, mode, opts);
     if (r && (r.blocked === 'captcha' || r.blocked === 'challenge')) {
-      // Показываем вкладку человеку и ждём до 2 минут, пока проверка не будет пройдена.
+      // Показываем вкладку человеку и ждём, пока проверка будет пройдена.
       onNeedHuman?.();
-      await chrome.windows.update(windowId, { state: 'normal', focused: true });
+      await chrome.windows.update(windowId, { state: 'normal', focused: true, width: 1100, height: 850 }).catch(() => {});
       await chrome.tabs.update(tab.id, { active: true });
-      chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: 'Прицел', message: 'Магазин просит подтвердить, что вы не робот. Пройдите проверку в открывшемся окне.' });
-      await waitLoaded(tab.id, 5000);
-      r = await extract(tab.id, mode, { ...opts, timeoutMs: 120000 });
+      chrome.notifications.create({ type: 'basic', iconUrl: 'icon.png', title: 'Прицел', message: 'Магазин просит подтвердить, что вы не робот. Пройдите проверку в открывшемся окне — поиск продолжится сам.' });
+      const passed = await waitHuman(tab.id);
+      if (!passed) return { blocked: r.blocked };
+      await waitLoaded(tab.id, 10000);
+      r = await extract(tab.id, mode, opts);
       await chrome.windows.update(windowId, { state: 'minimized' }).catch(() => {});
     }
     return r;

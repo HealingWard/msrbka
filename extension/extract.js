@@ -444,6 +444,8 @@
     const accept = (u) => { try { const x = new URL(u); return x.hostname.replace(/^www\./, '').endsWith(host) && linkRe.test(x.pathname); } catch { return false; } };
 
     if (mode === 'html') return { html: document.documentElement.outerHTML, url: location.href, title: document.title };
+    // Быстрый опрос: идёт ли ещё проверка «не робот» (для ожидания, пока её проходит человек).
+    if (mode === 'state') return { blocked: blockedState(), ready: document.readyState === 'complete' };
 
     if (mode === 'search') {
       const ready = await waitFor(() => {
