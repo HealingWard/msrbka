@@ -61,6 +61,12 @@ export function storeQueries(run) {
     const core = part.split(/\s+/).filter((w) => !CONFUSING_ADJ.test(' ' + w + ' ')).join(' ').trim();
     if (detectTypes(core).length) parts.push(core);
   }
+  // Цвет в запросе магазина сильно сужает выдачу (у магазина «голубые» могут не называться «бирюзовыми»):
+  // добавляем запрос без цвета — цвет и близкие оттенки проверит «Отмерь» по данным вещей.
+  for (const part of [...parts]) {
+    const plain = part.split(/\s+/).filter((w) => !detectColors(w).length && !/^цвет/i.test(w)).join(' ').trim();
+    if (plain !== part && /[a-zа-яё]{3}/i.test(plain)) parts.push(plain);
+  }
   const uniq = [...new Set(parts.map((x) => x.toLowerCase()))].map((l) => parts.find((x) => x.toLowerCase() === l));
   if (!uniq.length) {
     const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();

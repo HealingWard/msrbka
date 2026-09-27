@@ -6,9 +6,17 @@ const genitive = (c) => (c.endsWith('ый') ? c.slice(0, -2) + 'ого' : c.ends
 const genitiveList = (c) => colorList(c).map(genitive).join(' / ');
 export const colorStr = (c) => colorList(c).join(' / ');
 
+// Основа слова → цвет в словарной форме: «бирюзовые», «голубая» → «бирюзовый», «голубой».
 const COLOR_STEMS = [
   ['бежев', 'бежевый'], ['молочн', 'молочный'], ['песочн', 'песочный'], ['черн', 'чёрный'], ['хаки', 'хаки'],
   ['кремов', 'кремовый'], ['шоколад', 'шоколадный'], ['коричнев', 'коричневый'], ['графит', 'графитовый'], ['кэмел', 'кэмел'],
+  ['бирюз', 'бирюзовый'], ['голуб', 'голубой'], ['мятн', 'мятный'], ['зелен', 'зелёный'], ['оливк', 'оливковый'], ['оливков', 'оливковый'],
+  ['изумруд', 'изумрудный'], ['розов', 'розовый'], ['пудров', 'пудровый'], ['персик', 'персиковый'], ['коралл', 'коралловый'],
+  ['красн', 'красный'], ['бордо', 'бордовый'], ['вишнев', 'бордовый'], ['винн', 'бордовый'], ['марсал', 'бордовый'], ['терракот', 'терракотовый'],
+  ['рыж', 'рыжий'], ['оранж', 'оранжевый'], ['желт', 'жёлтый'], ['горчич', 'горчичный'], ['лимон', 'жёлтый'],
+  ['фиолет', 'фиолетовый'], ['сирен', 'сиреневый'], ['лилов', 'лиловый'], ['лаванд', 'сиреневый'], ['фукси', 'фуксия'],
+  ['золот', 'золотой'], ['серебр', 'серебряный'], ['бронз', 'бронзовый'], ['слонов', 'молочный'], ['айвори', 'молочный'], ['экрю', 'молочный'],
+  ['антрацит', 'графитовый'], ['индиго', 'тёмно-синий'], ['ультрамарин', 'синий'], ['нюдов', 'бежевый'], ['таупе', 'коричневый'], ['мокко', 'коричневый'],
 ];
 const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const norm = (s) => s.toLowerCase().replace(/ё/g, 'е');
@@ -29,6 +37,7 @@ export function detectColors(text) {
     if (/^син(ий|ие|яя|ее|их|юю|его|ей)$/.test(w) && !colors.includes('тёмно-синий')) add('синий');
     if (/^бел(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('белый');
     if (/^сер(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('серый');
+    if (/^(небесн|лазурн)/.test(w)) add('голубой');
   }
   return colors;
 }
@@ -146,8 +155,9 @@ export function missingCriteria(crit, ds) {
 }
 
 const WEIGHTS = { brand: 40, size: 30, color: 20, price: 10 };
-// unk — магазин не сообщил этот параметр (например, размеры в выдаче), проверить нельзя.
-const FACTOR = { ok: 1, any: 1, near: 0.5, unk: 0.5, no: 0 };
+// unk — магазин не сообщил этот параметр, подтвердить совпадение нельзя: баллов не даёт
+// (иначе «ничего не известно» оценивалось выше, чем «совпал размер»).
+const FACTOR = { ok: 1, any: 1, near: 0.5, unk: 0, no: 0 };
 export const GLYPH = { ok: '✓', near: '≈', no: '✕', any: '—', unk: '?' };
 const LABEL = { brand: 'Бренд', size: 'Размер', color: 'Цвет', price: 'Цена' };
 const KEYS = ['brand', 'size', 'color', 'price'];
@@ -233,7 +243,12 @@ export const isUniversalSize = (z) => UNIVERSAL.test(String(z).trim());
 
 const normSize = (x) => String(x).toLowerCase().replace(/\s*(ru|rus|eu|it|fr|int)$/i, '').trim();
 /** «XS/42» → ['xs', '42']: у Lamoda размер указан сразу в двух системах. */
-const sizeTokens = (x) => String(x).split(/[/,()]/).map(normSize).filter(Boolean);
+/** «XS/42» → ['xs', '42']; диапазон «39-41» → ['39', '40', '41'] (так размечают тапочки, носки). */
+const sizeTokens = (x) => String(x).split(/[/,()]/).map(normSize).filter(Boolean).flatMap((t) => {
+  const r = t.match(/^(\d{2})\s*[-–—]\s*(\d{2})$/);
+  if (!r || +r[2] <= +r[1] || +r[2] - +r[1] > 4) return [t];
+  return Array.from({ length: +r[2] - +r[1] + 1 }, (_, i) => String(+r[1] + i));
+});
 
 /** Точное совпадение: «M» = «m», «38» = «38 RU», «XS/42» = «XS» и = «42». */
 export function sizeEq(a, b) {
@@ -296,6 +311,9 @@ const TYPE_GROUPS = [
   ['лоферы', /^лофер/], ['ботильоны', /^ботильон/], ['ботинки', /^ботин/], ['кеды', /^кед/], ['кроссовки', /^кроссовк/],
   ['туфли', /^туфл/], ['сапоги', /^сапог/], ['мокасины', /^мокасин/], ['босоножки', /^босонож/], ['сандалии', /^сандал/],
   ['балетки', /^балетк/], ['мюли', /^мюли/], ['сабо', /^сабо$/],
+  ['тапочки', /^(тапоч|тапк|чешк)/], ['шлёпанцы', /^(шлепанц|шлепк|сланц|вьетнамк)/], ['слипоны', /^слипон/], ['эспадрильи', /^эспадрил/],
+  ['угги', /^угг/], ['валенки', /^валенк/], ['полусапоги', /^полусапог/], ['ботфорты', /^ботфорт/], ['оксфорды', /^оксфорд/],
+  ['дерби', /^дерби$/], ['броги', /^броги?$/], ['кроксы', /^крокс/],
 ];
 /** Типы товара, упомянутые в тексте: «Брючный костюм» → ['костюм'] («брючный» — не брюки). */
 export function detectTypes(text) {
@@ -312,14 +330,40 @@ export const CONFUSING_ADJ = /(^|[\s,])(брючн|юбочн|джинсов|п�
  * opts.types — типы товара из запроса; товары с другим типом в названии не входят в выдачу
  * (возвращаются в hidden), если не задано opts.showOther.
  */
+/** Одна и та же вещь у магазина несколькими предложениями (разные продавцы) — оставляем самую дешёвую. */
+function dedupe(items) {
+  const byKey = new Map();
+  for (const p of items) {
+    const k = [p.store, brandKey(p.brand), norm(p.title || '').replace(/[^a-zа-я0-9]+/g, ' ').trim(), p.image && !String(p.image).startsWith('data:') ? p.image : 'url:' + p.url].join('|');
+    const cur = byKey.get(k);
+    if (!cur || p.price < cur.price) byKey.set(k, p);
+  }
+  const keep = new Set(byKey.values());
+  return items.filter((p) => keep.has(p));
+}
+
+/**
+ * В выдачу попадают только вещи, которые подтверждённо подходят по заданным размеру и цвету,
+ * нужного типа и для нужного пола. Остальные — в hidden с причинами (их можно показать: opts.showOther).
+ * opts.types — типы товара из запроса.
+ */
 export function getResults(items, crit, filters, sort, opts = {}) {
   const sorter = SORTERS[sort] || SORTERS.match;
   const types = opts.types || [];
-  let pool = baseProducts(items, crit);
-  const otherType = (p) => { if (!types.length) return false; const t = detectTypes(p.title); return t.length > 0 && !t.some((x) => types.includes(x)); };
-  const otherGender = (p) => genderMismatch(p, crit.gender);
-  const hidden = pool.filter((p) => otherType(p) || otherGender(p));
-  if (!opts.showOther) pool = pool.filter((p) => !otherType(p) && !otherGender(p));
+  const reasonOf = (p) => {
+    if (types.length) { const t = detectTypes(p.title); if (t.length > 0 && !t.some((x) => types.includes(x))) return 'type'; }
+    if (genderMismatch(p, crit.gender)) return 'gender';
+    const m = matchProduct(p, crit);
+    if (crit.size && m.reasons[1].s === 'no') return 'size';
+    // Размер белья в сантиметрах («200×220») сверить с «евро» нельзя — такие комплекты не прячем.
+    if (crit.size && m.reasons[1].s === 'unk' && !(bedKey(crit.size) && (p.sizes || []).length)) return 'sizeUnk';
+    if (crit.color && m.reasons[2].s === 'no') return 'color';
+    if (crit.color && m.reasons[2].s === 'unk') return 'colorUnk';
+    return null;
+  };
+  const all = dedupe(items).map((p) => ({ p, why: reasonOf(p) }));
+  const hiddenList = all.filter((x) => x.why);
+  const pool = (opts.showOther ? all : all.filter((x) => !x.why)).map((x) => x.p);
   const base = pool.map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
   const f = filters;
   const list = base.filter(({ p }) =>
@@ -329,10 +373,19 @@ export function getResults(items, crit, filters, sort, opts = {}) {
     (!f.colors.length || f.colors.includes(p.color)) &&
     (!f.min || p.price >= +f.min) &&
     (!f.max || p.price <= +f.max));
-  // Почему скрыты: другой тип товара («брюки») и/или другой пол («мужские»).
-  const hiddenTypes = [...new Set(hidden.filter(otherType).flatMap((p) => detectTypes(p.title)))];
-  const hiddenGenders = [...new Set(hidden.filter(otherGender).map((p) => GENDER_ITEM[p.gender] || p.gender))];
-  return { base, list, hidden: hidden.length, hiddenTypes, hiddenGenders };
+  const count = (w) => hiddenList.filter((x) => x.why === w).length;
+  // Причины, почему вещи скрыты, — для строки над выдачей.
+  const hiddenWhy = [
+    count('type') && 'другого типа (' + [...new Set(hiddenList.filter((x) => x.why === 'type').flatMap((x) => detectTypes(x.p.title)))].join(', ') + ') — ' + count('type'),
+    count('gender') && [...new Set(hiddenList.filter((x) => x.why === 'gender').map((x) => GENDER_ITEM[x.p.gender] || x.p.gender))].join(', ') + ' — ' + count('gender'),
+    count('size') && 'нет размера ' + crit.size + ' — ' + count('size'),
+    count('sizeUnk') && 'магазин не указал размеры — ' + count('sizeUnk'),
+    count('color') && 'другого цвета — ' + count('color'),
+    count('colorUnk') && 'магазин не указал цвет — ' + count('colorUnk'),
+  ].filter(Boolean);
+  const hiddenTypes = [...new Set(hiddenList.filter((x) => x.why === 'type').flatMap((x) => detectTypes(x.p.title)))];
+  const hiddenGenders = [...new Set(hiddenList.filter((x) => x.why === 'gender').map((x) => GENDER_ITEM[x.p.gender] || x.p.gender))];
+  return { base, list, hidden: hiddenList.length, hiddenWhy, hiddenTypes, hiddenGenders };
 }
 
 /** Чипы с параметрами поиска для шапки результатов и «Моих поисков». */

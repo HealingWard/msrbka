@@ -184,7 +184,7 @@ export function Results({ run }) {
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
   const baseSort = sort === 'usual' ? 'match' : sort;
-  const { base, list, hidden, hiddenTypes, hiddenGenders } = useMemo(
+  const { base, list, hidden, hiddenWhy } = useMemo(
     () => getResults(items, run.crit, f, baseSort, { types, showOther }),
     [items, run.crit, f, baseSort, types, showOther],
   );
@@ -204,8 +204,11 @@ export function Results({ run }) {
 
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
-  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : Infinity);
-  const shown = sort === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;
+  // «Ниже обычной»: по истории цены; пока истории нет — по скидке магазина к старой цене.
+  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : p.old > p.price ? -Math.round((1 - p.price / p.old) * 100) : Infinity);
+  const canUsual = base.some(({ p }) => Number.isFinite(va(p)));
+  const sortKey = sort === 'usual' && !canUsual ? 'match' : sort;
+  const shown = sortKey === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;
   const minP = shown.length ? Math.min(...shown.map((x) => x.p.price)) : 0;
   const bestId = shown.find((x) => x.p.price === minP)?.p.id;
 
@@ -261,15 +264,24 @@ export function Results({ run }) {
                 : r.searchUrl && <a className="push" href={r.searchUrl} target="_blank" rel="noopener noreferrer">Искать на сайте магазина ↗</a>}
             </div>
           ))}
+          {!showOther && run.stores.map((n) => {
+            const r = entry.stores[n];
+            const total = r?.status === 'ok' ? (r.items || []).length : 0;
+            if (!total || base.some(({ p }) => p.store === n)) return null;
+            return (
+              <div key={'all-hidden-' + n} className="note" role="status">
+                <b>{n}</b>
+                <span>нашлось {total} {plural(total, THINGS)}, но ни одна не подошла по запросу — причины ниже.</span>
+                {r.searchUrl && <a className="push" href={r.searchUrl} target="_blank" rel="noopener noreferrer">Открыть выдачу магазина ↗</a>}
+              </div>
+            );
+          })}
           {hidden > 0 && (
             <div className="note" role="status">
               <span>
-                {(() => {
-                  const why = [hiddenTypes.length ? 'другого типа (' + hiddenTypes.join(', ') + ')' : '', hiddenGenders.join(', ')].filter(Boolean).join('; ');
-                  return showOther
-                    ? <>Показаны и неподходящие вещи ({hidden}: {why}).</>
-                    : <>Скрыто {hidden} {plural(hidden, THINGS)}: {why} — магазин нашёл их по похожим словам.</>;
-                })()}
+                {showOther
+                  ? <>Показаны и вещи, которые не подходят или не подтверждены: {hiddenWhy.join('; ')}.</>
+                  : <>Скрыто {hidden} {plural(hidden, THINGS)}, которые не подходят или не подтверждены магазином: {hiddenWhy.join('; ')}.</>}
               </span>
               <button type="button" className="link push" onClick={() => setShowOther(!showOther)}>{showOther ? 'Скрыть' : 'Показать'}</button>
             </div>
@@ -282,7 +294,7 @@ export function Results({ run }) {
               <div className="count">Показано <b>{shown.length}</b> из <span>{base.length}</span></div>
             </div>
             <div className="toolbar-r">
-              <Segmented label="Сортировка" options={SORTS} value={sort} onChange={setSort} />
+              <Segmented label="Сортировка" options={canUsual ? SORTS : SORTS.filter(([k]) => k !== 'usual')} value={sortKey} onChange={setSort} />
               <Segmented label="Вид" options={VIEWS} value={view} onChange={(v) => app.setPref('view', v)} />
               {view === 'table' && <Segmented label="Тема таблицы" options={THEMES} value={dark} onChange={(v) => app.setPref('tableDark', v)} />}
             </div>
