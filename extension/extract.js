@@ -406,7 +406,8 @@
   // Stockmann отдаёт картинки только своим страницам (защита требует cookie, которые браузер не шлёт
   // для картинок на чужом сайте). Поэтому скачиваем уменьшенное фото здесь, на странице магазина,
   // и передаём сайту как data:-URL. Если не вышло — оставляем обычную ссылку.
-  async function inlineImages(items, max = 60) {
+  // all — встроить всю галерею (до 6 фото), а не только главное фото: для страницы вещи.
+  async function inlineImages(items, max = 60, all = false) {
     const host = location.hostname.replace(/^www\./, '');
     if (!host.endsWith('stockmann.ru')) return items;
     const small = (u) => u.replace('/pi/bx2/', '/pi/b/').replace('/pi/ppx2/', '/pi/b/').replace('/pi/pp/', '/pi/b/');
@@ -426,6 +427,14 @@
     const worker = async () => {
       while (queue.length) {
         const it = queue.shift();
+        if (all) {
+          // Галерея: каждое фото — отдельно; не загрузилось — пропускаем.
+          const src = [...new Set([it.image, ...(it.images || [])].filter(Boolean))].slice(0, 6);
+          const got = [];
+          for (const u of src) { const d = u.startsWith('data:') ? u : (await toData(small(u))) || (await toData(u)); if (d) got.push(d); }
+          if (got.length) { it.image = got[0]; it.images = got; }
+          continue;
+        }
         const data = (await toData(small(it.image))) || (await toData(it.image));
         if (data) { it.image = data; it.images = [data]; }
       }
@@ -536,7 +545,7 @@
       const ready = await waitFor(() => blockedState() ? { blocked: blockedState() } : (document.querySelector('h1') ? { ok: 1 } : null), opts.timeoutMs || 20000);
       if (ready && ready.blocked) return { blocked: ready.blocked };
       const exact = storeExtract('product');
-      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact]))[0], source: 'store' };
+      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact], 1, true))[0], source: 'store' };
       await sleep(1000);
       const here = key(location.href);
       const ld = jsonLd();

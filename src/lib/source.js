@@ -156,9 +156,10 @@ export async function fetchDetails(item, signal) {
   if (item.demo || !isLive()) return { item, history: demoHistory(item.id) };
   const store = storeByName(item.store);
   if (store?.ext) {
-    // Карточка — через расширение (если размеры ещё не собраны), история — с сервера.
+    // Карточка — через расширение (если размеры ещё не собраны или в выдаче было одно фото), история — с сервера.
     let merged = item;
-    if (!item.detailed && (await extensionVersion())) {
+    const historyP = getJson('/api/history?id=' + encodeURIComponent(item.id), signal).then((h) => h[item.id] || []).catch(() => []);
+    if ((!item.detailed || (item.images || []).length < 2) && (await extensionVersion())) {
       try {
         const r = await extDetails(item.url, { signal });
         if (r.status === 'ok' && r.item) {
@@ -176,9 +177,7 @@ export async function fetchDetails(item, signal) {
         if (e.name === 'AbortError') throw e;
       }
     }
-    let history = [];
-    try { history = (await getJson('/api/history?id=' + encodeURIComponent(item.id), signal))[item.id] || []; } catch (e) { if (e.name === 'AbortError') throw e; }
-    return { item: merged, history };
+    return { item: merged, history: await historyP };
   }
   const r = await getJson('/api/product?url=' + encodeURIComponent(item.url), signal);
   const fresh = liveItem(r);

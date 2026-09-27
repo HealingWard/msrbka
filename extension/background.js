@@ -107,12 +107,12 @@ async function visit(windowId, url, mode, opts, onNeedHuman) {
 // ——— кэш карточек ———
 
 async function cachedDetails(url) {
-  const k = 'd:' + url;
+  const k = 'd2:' + url; // d2 — с полной галереей фото
   const v = (await chrome.storage.local.get(k))[k];
   return v && Date.now() - v.t < DETAILS_TTL ? v.item : null;
 }
 async function saveDetails(url, item) {
-  await chrome.storage.local.set({ ['d:' + url]: { t: Date.now(), item } });
+  await chrome.storage.local.set({ ['d2:' + url]: { t: Date.now(), item } });
 }
 
 function mergeDetails(item, d) {

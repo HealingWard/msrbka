@@ -234,8 +234,13 @@ export function Results({ run }) {
           </div>
         </div>
         <div className="acts">
-          <button type="button" className={'btn btn-secondary' + (isSaved ? ' is-done' : '')} aria-disabled={isSaved}
-            onClick={() => { if (isSaved) return; app.saveSearch({ ...run, at: entry.at }); app.notify('Поиск сохранён в «Мои поиски»'); }}>
+          <button type="button" className="btn btn-secondary" aria-pressed={isSaved}
+            title={isSaved ? 'Поиск в «Моих поисках». Нажмите, чтобы убрать' : undefined}
+            onClick={() => {
+              const saved = app.saved.find((x) => x.q === run.q && x.ds === run.ds);
+              if (saved) { app.deleteSearch(saved.id); app.notify('Поиск убран из «Моих поисков»'); }
+              else { app.saveSearch({ ...run, at: entry.at }); app.notify('Поиск сохранён в «Мои поиски»'); }
+            }}>
             {isSaved ? 'Поиск сохранён' : 'Сохранить поиск'}
           </button>
           <button type="button" className="btn btn-moss" onClick={() => setExportOpen(true)} disabled={!base.length}>

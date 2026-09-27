@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ALLSIZES } from '../data/catalog.js';
 import { dateLong, ddmm, pct, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
@@ -20,7 +20,11 @@ export function Product({ id, from }) {
   const [photo, setPhoto] = useState(0);
   const [goalOpen, setGoalOpen] = useState(false);
   const [goalVal, setGoalVal] = useState('');
-  const base = app.findItem(id);
+  // Вещь держим и после «Больше не следить»: иначе, открытая из списка, она пропадала бы со страницы.
+  const found = app.findItem(id);
+  const keep = useRef(found);
+  if (found) keep.current = found;
+  const base = found || keep.current;
   const [details, setDetails] = useState({ item: null, history: [], loading: true, error: null, checkedAt: null });
 
   const { refreshFav } = app;
