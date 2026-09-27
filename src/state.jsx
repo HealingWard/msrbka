@@ -143,6 +143,27 @@ export function AppProvider({ children }) {
     setFavs((f) => (f[item.id] ? { ...f, [item.id]: { ...f[item.id], item: snapshot(item) } } : f));
   }, [setFavs]);
 
+  /** Результат проверки цен: новый снимок товара и время проверки. Фото оставляем прежнее (оно уже сохранено). */
+  const applyRecheck = useCallback((results) => {
+    const at = new Date().toISOString();
+    setFavs((f) => {
+      const next = { ...f };
+      for (const r of results) {
+        const cur = next[r.id];
+        if (!cur) continue;
+        if (r.status === 'ok' && r.item) {
+          const snap = snapshot(r.item);
+          next[r.id] = { ...cur, item: { ...snap, image: cur.item?.image || snap.image }, checkedAt: at, checkStatus: 'ok' };
+        } else if (r.status === 'noprice') {
+          next[r.id] = { ...cur, item: { ...cur.item, stock: 'Нет в наличии' }, checkedAt: at, checkStatus: 'noprice' };
+        } else {
+          next[r.id] = { ...cur, checkStatus: r.status };
+        }
+      }
+      return next;
+    });
+  }, [setFavs]);
+
   const setFavColl = useCallback((id, coll) => setFavs((f) => (f[id] ? { ...f, [id]: { ...f[id], coll } } : f)), [setFavs]);
 
   const addColl = useCallback((name) => {
@@ -159,9 +180,9 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
-    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl,
+    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
   }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, setQuery, setPending, setLastRun, setPref,
-    setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, setFavColl, addColl, removeColl]);
+    setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
