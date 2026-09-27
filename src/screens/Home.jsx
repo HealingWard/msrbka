@@ -1,78 +1,97 @@
-import { useState } from 'react';
-import { CATS, STORES, STORE_NAMES, allBrands } from '../data/catalog.js';
-import { STORES_F, countStr, toggle, whenStr } from '../lib/format.js';
+import { useMemo } from 'react';
+import { CATS, STORE_NAMES, allBrands } from '../data/catalog.js';
+import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { missingCriteria, parseQuery, sizeRequired } from '../lib/search.js';
-import { BrandPicker, CheckRow, useDismiss } from '../components/ui.jsx';
+import { detectTypes } from '../lib/search.js';
+import { priceAt } from '../lib/history.js';
+import { deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
+import { useHistories } from '../lib/useHistories.js';
+import { startSearch } from '../lib/startSearch.js';
+import { isLive } from '../lib/config.js';
+import { DEMO_BY_ID, DEMO_ITEMS } from '../lib/items.js';
+import { Icon } from '../components/Icon.jsx';
+import { BrandPicker, Chip, PriceChange } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
-const EXAMPLES = [
-  ['бежевый тренч до 25 000', 'уточню размер и бренд'],
-  ['белые кеды Veja, 38 размер, до 15 000', 'без уточнений, если магазины выбраны'],
-  ['чёрный тренч 12 Storeez S до 30 000', 'сразу к результатам'],
-];
+const GENDERS = [['women', 'Женщинам'], ['men', 'Мужчинам'], ['any', 'Всем']];
+const kindOf = (p) => p.kind || detectTypes(p.title)[0] || '';
+const openItem = (id, from = 'home') => navigate('/product/' + encodeURIComponent(id) + '?from=' + from);
 
-function StorePicker({ selected, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useDismiss(open, () => setOpen(false));
-  const n = selected.length;
-  const label = n === STORE_NAMES.length ? 'все ' + n : !n ? 'не выбраны' : n === 1 ? selected[0] : n + ' из ' + STORE_NAMES.length;
-  return (
-    <div className="dd" ref={ref}>
-      <button type="button" className="dd-trigger" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="k">Магазины</span><span className="v">{label}</span><span className="caret">▾</span>
-      </button>
-      {open && (
-        <div className="dd-panel" style={{ width: 280 }}>
-          <div className="dd-note">Ищем во всех отмеченных</div>
-          {STORES.map((s) => (
-            <CheckRow key={s.name} on={selected.includes(s.name)} label={s.name} meta={s.domain} onClick={() => onChange(toggle(selected, s.name))} />
-          ))}
-          <div className="dd-foot">
-            <button type="button" className="strong" onClick={() => onChange(STORE_NAMES.slice())}>Выбрать все</button>
-            <button type="button" onClick={() => onChange([])}>Сбросить</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+/** Вещи, за которыми следите: статус, прогресс до цели. */
+function useFollowRows(app) {
+  const entries = useMemo(() => Object.entries(app.favs)
+    .map(([id, fv]) => ({ id, fv, item: fv.item || DEMO_BY_ID[id] }))
+    .filter((x) => x.item), [app.favs]);
+  const hist = useHistories(entries.map((x) => x.item));
+  return entries.map(({ id, fv, item }) => {
+    const pts = hist(item, fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined);
+    const st = priceStats(pts, 90);
+    const cur = item.price;
+    const was = fv.priceAtAdd || priceAt(pts, new Date(fv.addedAt).getTime()) || cur;
+    const tg = fv.target || null;
+    return { id, item, cur, was, tg, st, dl: Math.round(((cur - was) / was) * 100), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
+  });
+}
+
+/** Находки дня: вещи из последних поисков (не из списков), которые сильнее всего ниже обычной цены. */
+function useFinds(app) {
+  const pool = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    const runs = Object.values(app.results).sort((a, b) => new Date(b.at) - new Date(a.at));
+    for (const e of runs) {
+      for (const st of Object.values(e.stores || {})) {
+        for (const p of st.items || []) if (!seen.has(p.id)) { seen.add(p.id); out.push(p); }
+      }
+    }
+    if (!out.length && !isLive()) return DEMO_ITEMS;
+    return out.slice(0, 300);
+  }, [app.results]);
+  const hist = useHistories(pool);
+  return pool
+    .filter((p) => !app.favs[p.id])
+    .map((p) => {
+      const st = priceStats(hist(p), 90);
+      if (st && st.known) return { p, score: st.va, badge: deltaBadge(st.va) };
+      // История ещё копится — берём скидку магазина к старой цене.
+      if (p.old && p.old > p.price) { const d = -Math.round((1 - p.price / p.old) * 100); return { p, score: d, badge: deltaBadge(d) }; }
+      return null;
+    })
+    .filter((x) => x && x.score < 0)
+    .sort((a, b) => a.score - b.score)
+    .slice(0, 4);
 }
 
 export function Home() {
   const app = useApp();
   const { prefs, setPref, query, setQuery } = app;
   const { selStores, selBrands, cats } = prefs;
+  const rows = useFollowRows(app);
+  const finds = useFinds(app);
 
-  const start = () => {
-    const q = query.trim();
-    if (!q) return;
-    const p = parseQuery(q, cats);
-    // «Для кого» к товарам для дома не относится; к нераспознанным («прочее») — только если сказано в запросе.
-    const gender = p.ds === 'home' ? null : p.gender || (p.ds !== 'other' && prefs.gender && prefs.gender !== 'any' ? prefs.gender : null);
-    const crit = { brands: p.brands.length ? p.brands : selBrands.slice(), size: p.size, color: p.color, budget: p.budget, ...(gender ? { gender } : {}) };
-    let missing = missingCriteria(crit, p.ds);
-    if (!prefs.askClarify) missing = crit.size || !sizeRequired(p.ds) ? [] : ['size'];
-    if (!selStores.length || missing.length) {
-      // Вопрос о магазинах показываем всегда — с уже отмеченными вариантами.
-      missing = ['store', ...missing];
-      app.setPending({ q, ds: p.ds, crit, missing, stores: selStores.slice() });
-      navigate('/clarify');
-    } else {
-      app.runSearch({ q, ds: p.ds, stores: selStores.slice(), crit });
-    }
-  };
-
+  const pora = rows.filter((r) => r.status.k === 'pora');
+  const wait = rows.filter((r) => r.tg && r.cur > r.tg);
   const brandsLabel = !selBrands.length ? 'любые' : selBrands.length === 1 ? selBrands[0] : selBrands[0] + ' +' + (selBrands.length - 1);
+  const go = () => startSearch(app, query);
 
   return (
-    <div className="page home">
-      <div className="mono-label">Новый поиск</div>
-      <h1>Опишите, что хотите найти — я проверю все выбранные магазины</h1>
-      <form className="searchbox" onSubmit={(e) => { e.preventDefault(); start(); }} role="search">
-        <input className="q" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Что ищем"
-          placeholder="Например, бежевый тренч до 25 000" autoFocus />
-        <div className="searchbox-bar">
-          <StorePicker selected={selStores} onChange={(v) => setPref('selStores', v)} />
+    <div className="page w-home">
+      <div className="home-intro">
+        <h1 className="display">Что будем отмерять?</h1>
+        <p className="sub">Опишите вещь своими словами. Сравню цены в выбранных магазинах и подскажу, когда покупать.</p>
+        <form className="qbox" role="search" onSubmit={(e) => { e.preventDefault(); go(); }}>
+          <Icon name="search" size={24} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например, бежевый тренч до 25 000" aria-label="Что ищем" autoFocus />
+          <button type="submit" className="btn btn-primary">Найти</button>
+        </form>
+        <div className="opt-row">
+          <div className="chip-row">
+            <span className="label">Где искать</span>
+            {STORE_NAMES.map((n) => {
+              const on = selStores.includes(n);
+              return <Chip key={n} on={on} onClick={() => setPref('selStores', (l) => toggle(l, n))}>{on ? '✓ ' : ''}{n}</Chip>;
+            })}
+          </div>
           <BrandPicker brands={allBrands()} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
@@ -81,47 +100,91 @@ export function Home() {
                 <button type="button" onClick={() => setPref('selBrands', [])}>Сбросить</button>
               </div>
             )} />
-          <div className="spacer" />
-          <span className="hint">{selStores.length ? 'Enter — искать' : 'Магазины не выбраны — спрошу'}</span>
-          <button type="submit" className="btn btn-primary">Найти</button>
         </div>
-      </form>
-      <div className="cat-row">
-        <span className="label">Для кого</span>
-        {[['women', 'Женщинам'], ['men', 'Мужчинам'], ['any', 'Всем']].map(([k, l]) => {
-          const on = (prefs.gender || 'any') === k;
-          return <button key={k} type="button" aria-pressed={on} className={'chip' + (on ? ' on' : '')} onClick={() => setPref('gender', k)}>{l}</button>;
-        })}
-      </div>
-      <div className="cat-row" style={{ marginTop: 10 }}>
-        <span className="label">Категории</span>
-        {CATS.map((c) => (
-          <button key={c} type="button" aria-pressed={cats.includes(c)} className={'chip' + (cats.includes(c) ? ' on' : '')}
-            onClick={() => setPref('cats', (list) => toggle(list, c))}>{c}</button>
-        ))}
-      </div>
-      <div className="two-col">
-        <div>
-          <div className="mono-label section-head">Примеры запросов</div>
-          {EXAMPLES.map(([q, note]) => (
-            <button key={q} type="button" className="example" onClick={() => setQuery(q)}>
-              <span>{q}</span><span className="note">{note}</span>
-            </button>
-          ))}
+        <div className="chip-row" style={{ marginTop: 16 }}>
+          <span className="label">Категории</span>
+          {CATS.map((c) => <Chip key={c} on={cats.includes(c)} onClick={() => setPref('cats', (list) => toggle(list, c))}>{c}</Chip>)}
         </div>
-        <div>
-          <div className="mono-label section-head">Мои поиски</div>
-          {app.saved.slice(0, 3).map((x) => (
-            <div key={x.id} className="recent">
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="q">{x.q}</div>
-                <div className="meta">{countStr(x.stores.length, STORES_F)} · запуск {whenStr(x.last)}</div>
+        <div className="chip-row" style={{ marginTop: 16 }}>
+          <span className="label">Для кого</span>
+          {GENDERS.map(([k, l]) => <Chip key={k} on={(prefs.gender || 'any') === k} onClick={() => setPref('gender', k)}>{l}</Chip>)}
+        </div>
+        <div className="small home-hint">
+          {selStores.length ? 'Ищем в: ' + selStores.join(', ') + '. Enter — найти.' : 'Отметьте магазины — или спрошу после запроса.'}
+          {isLive() && <> Stockmann и Lamoda — через <a href="#/extension">расширение для Chrome</a>.</>}
+        </div>
+      </div>
+
+      <div className="ruler home-divider" aria-hidden="true" />
+
+      <div className="blocks">
+        <section className="blk" aria-labelledby="pora-h">
+          <div className="blk-head">
+            <Icon name="scissors" size={20} className="c-drop" />
+            <h2 className="h2" id="pora-h">Пора покупать</h2>
+            <span className="n">{pora.length}</span>
+          </div>
+          <div className="blk-rows">
+            {pora.slice(0, 3).map((r) => {
+              const reached = r.tg && r.cur <= r.tg;
+              const n = reached ? r.dl : r.st?.va || 0;
+              const kind = kindOf(r.item);
+              const what = (kind ? cap(kind) + ' ' : '') + (r.item.brand || (kind ? '' : r.item.title)) + ' в ' + r.item.store;
+              const ctx = reached ? 'цель ' + rub(r.tg) + ' достигнута' : r.st?.isMin ? 'минимум за 90 дней' : 'ниже обычной цены';
+              return (
+                <div key={r.id} className="blk-row">
+                  <b style={{ fontWeight: 600 }}>{what.trim()}</b>: <span className={'chg-inline ' + (n < 0 ? 'drop' : n > 0 ? 'rise' : '')}>{pct(n)}</span>, {ctx}.{' '}
+                  <button type="button" className="link" style={{ fontWeight: 400 }} onClick={() => openItem(r.id, 'lists')}>Посмотреть</button>
+                </div>
+              );
+            })}
+            {!pora.length && <div className="blk-empty">Пока рано. Когда цена опустится до цели или ниже обычной, вещь появится здесь.</div>}
+          </div>
+        </section>
+
+        <section className="blk" aria-labelledby="wait-h">
+          <div className="blk-head">
+            <Icon name="hourglass" size={20} className="c-muted" />
+            <h2 className="h2" id="wait-h">Ждём</h2>
+            <span className="n">{wait.length}</span>
+          </div>
+          <div className="blk-rows">
+            {wait.slice(0, 3).map((r) => (
+              <button type="button" key={r.id} className="blk-row clickable btnrow" onClick={() => openItem(r.id, 'lists')}>
+                <span className="t">{r.item.brand ? r.item.brand + ' · ' : ''}{r.item.title}</span>
+                <span className="bar4"><i style={{ width: Math.round(r.prog * 100) + '%' }} /></span>
+                <span className="meta">ЦЕЛЬ {rub(r.tg)} · ОСТАЛОСЬ {rub(r.cur - r.tg)}</span>
+              </button>
+            ))}
+            {!wait.length && <div className="blk-empty">Задайте цель на странице вещи — здесь появится, сколько осталось до неё.</div>}
+          </div>
+        </section>
+
+        <section className="blk-moss" aria-label="Находки дня">
+          <div className="blk-head" style={{ gap: 12 }}>
+            <span className="tape-label">Находки дня</span>
+            <span className="small" style={{ color: 'var(--on-moss-2)' }}>ниже обычной сильнее всего</span>
+          </div>
+          <div className="blk-rows">
+            {finds.map(({ p, badge }) => (
+              <div key={p.id} className="find" role="link" tabIndex={0} onClick={() => openItem(p.id)} onKeyDown={(e) => { if (e.key === 'Enter') openItem(p.id); }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="label">{p.store}{p.brand ? ' · ' + p.brand : ''}</div>
+                  <div className="t">{p.title}</div>
+                </div>
+                <div className="r">
+                  <span className="price">{rub(p.price)}</span>
+                  <PriceChange badge={badge} />
+                </div>
               </div>
-              <button type="button" className="btn btn-sm" onClick={() => app.relaunch(x.id)}>↻ Запустить</button>
-            </div>
-          ))}
-          {!app.saved.length && <div className="empty-note">Сохраните поиск на экране результатов — он появится здесь.</div>}
-        </div>
+            ))}
+            {!finds.length && (
+              <div className="find" style={{ cursor: 'default', color: 'var(--on-moss-2)', fontSize: 15 }}>
+                Здесь появятся вещи из ваших поисков, которые сейчас дешевле обычного.
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

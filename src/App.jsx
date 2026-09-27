@@ -1,10 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { navigate, useRoute } from './lib/router.js';
 import { runFromParams, runKey } from './lib/search.js';
+import { startSearch } from './lib/startSearch.js';
+import { ddmm } from './lib/format.js';
+import { Icon } from './components/Icon.jsx';
 import { Toast } from './components/ui.jsx';
 import { isLive } from './lib/config.js';
 import { Clarify } from './screens/Clarify.jsx';
-import { Favorites } from './screens/Favorites.jsx';
+import { Lists } from './screens/Lists.jsx';
 import { Home } from './screens/Home.jsx';
 import { Product } from './screens/Product.jsx';
 import { Results } from './screens/Results.jsx';
@@ -12,35 +15,62 @@ import { Searches } from './screens/Searches.jsx';
 import { ExtensionPage } from './screens/ExtensionPage.jsx';
 import { useApp } from './state.jsx';
 
-function Header({ section }) {
+function HeaderSearch() {
+  const app = useApp();
+  const [q, setQ] = useState(app.query);
+  useEffect(() => setQ(app.query), [app.query]);
+  return (
+    <form className="hdr-search" role="search" onSubmit={(e) => { e.preventDefault(); startSearch(app, q); }}>
+      <Icon name="search" size={18} />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Что отмерить" aria-label="Что отмерить" />
+    </form>
+  );
+}
+
+function Header({ section, isHome }) {
   const app = useApp();
   const nav = [
     ['search', '/', 'Поиск', ''],
     ['searches', '/searches', 'Мои поиски', app.saved.length],
-    ['favorites', '/favorites', 'Избранное', Object.keys(app.favs).length],
+    ['lists', '/lists', 'Списки и цели', Object.keys(app.favs).length],
   ];
   return (
-    <header className="header">
+    <header className="hdr">
       <a className="logo" href="#/" aria-label="Отмерь — на главную">
-        <span className="logo-mark"><i /></span>
         <span className="logo-text">Отмерь</span>
+        <span className="logo-tape" aria-hidden="true"><i /><i /><i /></span>
       </a>
       <nav className="nav" aria-label="Разделы">
         {nav.map(([k, href, label, count]) => (
-          <a key={k} href={'#' + href} className={section === k ? 'active' : ''} aria-current={section === k ? 'page' : undefined}>
-            {label}<span className="count">{count}</span>
+          <a key={k} href={'#' + href} className={section === k ? 'on' : ''} aria-current={section === k ? 'page' : undefined}>
+            {label}{count !== '' && <span className="n">{count}</span>}
           </a>
         ))}
       </nav>
-      <div className="header-right">
-        <span className="status">Выгрузка в Google Таблицы</span>
-        <div className="avatar" aria-hidden="true">А</div>
+      <div className="hdr-right">
+        {!isHome && <HeaderSearch />}
+        <a className="avatar" href="#/extension" title="Расширение для Chrome">А</a>
       </div>
     </header>
   );
 }
 
-const TITLES = { search: 'Поиск', searches: 'Мои поиски', favorites: 'Избранное' };
+function Footer() {
+  const app = useApp();
+  const at = app.lastRun?.at;
+  const checked = at ? ' · проверено ' + ddmm(at) + ', ' + new Date(at).toTimeString().slice(0, 5) : '';
+  return (
+    <footer className="ftr">
+      <span className="slogan">Семь раз отмерь — один раз купи.</span>
+      <span className="label">
+        {isLive() ? <>Stockmann · Lamoda · Яндекс Маркет{checked} · <a href="#/extension">расширение для Chrome</a></>
+          : 'Демо-режим: каталог и история цен — демонстрационные данные'}
+      </span>
+    </footer>
+  );
+}
+
+const TITLES = { search: '', searches: 'Мои поиски', lists: 'Списки и цели' };
 
 export function App() {
   const route = useRoute();
@@ -61,10 +91,11 @@ export function App() {
   else if (path === '/results' && run) { screen = <Results key={runKey(run)} run={run} />; title = run.q; }
   else if (productMatch) {
     const from = params.get('from') || '';
-    if (from === 'favorites' || from === 'searches') section = from;
-    screen = <Product key={productId} id={productId} from={from} />;
+    if (from === 'favorites' || from === 'lists') section = 'lists';
+    if (from === 'searches') section = 'searches';
+    screen = <Product key={productId} id={productId} from={from === 'favorites' ? 'lists' : from} />;
   } else if (path === '/searches') { screen = <Searches />; section = 'searches'; }
-  else if (path === '/favorites') { screen = <Favorites />; section = 'favorites'; }
+  else if (path === '/lists' || path === '/favorites') { screen = <Lists />; section = 'lists'; }
   else if (path === '/extension') { screen = <ExtensionPage />; title = 'Расширение для Chrome'; }
 
   const found = !!screen;
@@ -73,18 +104,15 @@ export function App() {
   }, [found]);
 
   useEffect(() => {
-    document.title = (title ? title + ' — ' : TITLES[section] !== 'Поиск' ? TITLES[section] + ' — ' : '') + 'Отмерь';
+    const t = title || TITLES[section];
+    document.title = (t ? t + ' — ' : '') + 'Отмерь';
   }, [title, section]);
 
   return (
     <>
-      <Header section={section} />
-      {screen}
-      <footer className="footer">
-        {isLive()
-          ? <>Отмерь · поиск товаров в Stockmann, Lamoda и Яндекс Маркете. Stockmann и Lamoda — через <a href="#/extension" className="underline">расширение для Chrome</a>. Цены и наличие — с сайтов магазинов на момент проверки; история цены копится с первой проверки.</>
-          : 'Отмерь · демо-режим: каталог и история цен — демонстрационные данные, кнопки «Открыть в магазине» ведут на поиск по названию. Подключите сервер поиска (server/), чтобы искать настоящие товары. Поиски и избранное хранятся в этом браузере.'}
-      </footer>
+      <Header section={section} isHome={path === '/'} />
+      <main className="main">{screen}</main>
+      <Footer />
       <Toast message={app.toast} onDone={app.clearToast} />
     </>
   );

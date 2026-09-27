@@ -1,131 +1,134 @@
 import { useState } from 'react';
-import { MONTHS, fmt, rub } from '../lib/format.js';
+import { dateLong, dateShort, fmt, rub } from '../lib/format.js';
 import { niceStep } from '../lib/priceHistory.js';
-import { historyStats } from '../lib/history.js';
-import { Segmented } from './ui.jsx';
+import { deltaBadge, priceStats } from '../lib/pricing.js';
+import { PriceChange, Segmented } from './ui.jsx';
 
 const PERIODS = [[30, '30 дней'], [90, '90 дней'], [180, '180 дней']];
-const DAY = 86400000;
-const dateLabel = (t, now) => {
-  const d = new Date(t), n = new Date(now);
-  if (d.toDateString() === n.toDateString()) return 'сегодня';
-  return d.getDate() + ' ' + MONTHS[d.getMonth()];
-};
 
-export function PriceChart({ p, history, loading, children }) {
+/** История цены: статистика, коридор обычной цены, минимум, текущая точка, цель, подсказка при наведении. */
+export function PriceChart({ p, points, loading, target, children }) {
   const [period, setPeriod] = useState(90);
   const [hover, setHover] = useState(null);
   const now = Date.now();
-  const st = historyStats(history, period, now);
-  const enough = st && st.count >= 2;
+  const st = priceStats(points, period, now);
+  const ready = st && st.known && st.v.length >= 2;
 
   let body;
   if (loading && !st) {
-    body = <div className="chart-empty">Загружаю историю цены…</div>;
-  } else if (!enough) {
+    body = <div className="hist-empty">Загружаю историю цены…</div>;
+  } else if (!ready) {
     body = (
-      <div className="chart-empty">
+      <div className="hist-empty">
         {st
-          ? <>История цены копится: первая проверка — {dateLabel(st.first, now)}, цена {rub(st.cur)}. Сервер записывает цену при каждой проверке, и график появится после следующих.</>
-          : <>Пока нет ни одной проверки цены этого товара.</>}
+          ? <>История цены копится: первая проверка — {dateLong(st.first)}, цена {rub(st.cur)}. Цена записывается при каждом поиске и проверке. Через неделю наблюдений здесь появятся обычная цена, минимум и график.</>
+          : <>Пока нет ни одной проверки цены этой вещи.</>}
       </div>
     );
   } else {
-    const t0 = st.from, t1 = now, span = t1 - t0;
-    const step = niceStep((st.max - st.min) / 4 || st.min * 0.05);
-    const lo = Math.floor((st.min * 0.97) / step) * step;
-    const hi = Math.ceil((st.max * 1.02) / step) * step;
-    const X = (t) => ((Math.min(Math.max(t, t0), t1) - t0) / span) * 1000;
+    const n = st.v.length;
+    const vmax = Math.max(...st.v);
+    const lowV = Math.min(st.mn, target || st.mn);
+    const highV = Math.max(vmax, target || vmax);
+    const step = niceStep((highV - lowV) / 4 || lowV * 0.05);
+    const lo = Math.floor((lowV * 0.97) / step) * step;
+    const hi = Math.ceil((highV * 1.02) / step) * step;
+    const X = (i) => (i / (n - 1)) * 1000;
     const Y = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
-    const pts = st.pts;
-
-    // Линия начинается с первой известной цены, а не с начала периода.
-    const x0 = X(pts[0].t).toFixed(1);
-    let line = 'M' + x0 + ' ' + Y(pts[0].price).toFixed(2);
-    for (let i = 1; i < pts.length; i++) line += ' H' + X(pts[i].t).toFixed(1) + ' V' + Y(pts[i].price).toFixed(2);
-    line += ' H1000';
+    let line = 'M0 ' + Y(st.v[0]).toFixed(2);
+    for (let i = 1; i < n; i++) line += ' H' + X(i).toFixed(1) + ' V' + Y(st.v[i]).toFixed(2);
     const yt = [];
     for (let v = lo; v <= hi + 1; v += step) yt.push({ label: fmt(v), top: Y(v) + '%' });
-    const xt = [0, 1, 2, 3, 4].map((k) => ({
-      label: k === 4 ? 'сегодня' : dateLabel(t0 + (span * k) / 4, now),
-      left: k * 25 + '%', tx: k === 0 ? '0' : k === 4 ? '-100%' : '-50%',
-    }));
-    const avgR = Math.round(st.avg / 10) * 10;
-    const va = Math.round(((st.cur - st.avg) / st.avg) * 100);
-    const vm = Math.round(((st.cur - st.min) / st.min) * 100);
-    const pl = period + ' дней';
-    const stats = [
-      { label: 'Текущая', value: rub(st.cur), cls: p.old ? 'sale-text' : '', note: va === 0 ? 'на уровне средней' : 'на ' + Math.abs(va) + '% ' + (va < 0 ? 'ниже' : 'выше') + ' средней', noteCls: va < 0 ? 'sale-text' : '' },
-      { label: 'Средняя за ' + pl, value: rub(avgR), note: 'по проверкам цены', noteCls: 'muted' },
-      { label: 'Минимальная за ' + pl, value: rub(st.min), note: vm === 0 ? 'текущая цена — минимальная' : 'была ' + dateLabel(st.minAt, now) + ' · текущая выше на ' + vm + '%', noteCls: vm === 0 ? 'sale-text' : '' },
-    ];
-    const priceAtT = (t) => { let v = pts[0].price; for (const x of pts) { if (x.t <= t) v = x.price; else break; } return v; };
+    const xt = [0, 1, 2, 3, 4].map((k) => {
+      const i = Math.round((k * (n - 1)) / 4);
+      return { label: k === 4 ? 'сегодня' : dateShort(st.t[i]), left: (i / (n - 1)) * 100 + '%', tx: k === 0 ? '0' : k === 4 ? '-100%' : '-50%' };
+    });
+    const vm = Math.round(((st.cur - st.mn) / st.mn) * 100);
+    const days = Math.round((now - st.from) / 86400000) + 1;
+    const pl = (days < period ? days : period) + ' дней';
+    const minDate = dateLong(st.minAt);
+    const sentence = st.isMin ? 'Сейчас минимальная цена за ' + pl + '. Хороший момент, чтобы купить.'
+      : st.va < 0 ? 'Сейчас на ' + -st.va + ' % ниже обычной. Минимум — ' + rub(st.mn) + ' (' + minDate + ').'
+        : st.va > 0 ? 'Пока рано: цена выше обычной на ' + st.va + ' %. Минимум — ' + rub(st.mn) + ' (' + minDate + ').'
+          : 'Цена на обычном уровне. Минимум — ' + rub(st.mn) + ' (' + minDate + ').';
     const onMove = (e) => {
       const r = e.currentTarget.getBoundingClientRect();
-      const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-      const t = t0 + Math.round((frac * span) / DAY) * DAY;
-      if (t !== hover) setHover(Math.min(t, t1));
+      const i = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1))));
+      if (i !== hover) setHover(i);
     };
-    const h = hover != null ? { t: hover, price: priceAtT(hover), left: ((hover - t0) / span) * 100 } : null;
+    const h = hover != null && hover < n ? hover : null;
 
     body = (
       <>
-        <div className="chart-stats">
-          {stats.map((t) => (
-            <div key={t.label}>
-              <div className="label">{t.label}</div>
-              <div className={'value ' + (t.cls || '')}>{t.value}</div>
-              <div className={'note ' + t.noteCls}>{t.note}</div>
+        <div className="hist-stats">
+          <div>
+            <div className="label">Сейчас</div>
+            <div className="v">{rub(st.cur)}</div>
+            <div className="sn"><PriceChange small badge={deltaBadge(st.va)} />к обычной цене</div>
+          </div>
+          <div>
+            <div className="label">Обычная цена</div>
+            <div className="v">{fmt(st.p25)}–{fmt(st.p75)}&nbsp;₽</div>
+            <div className="sn">средняя {rub(Math.round(st.avg / 10) * 10)}</div>
+          </div>
+          <div>
+            <div className="label">Минимум за {pl}</div>
+            <div className="v">{rub(st.mn)}</div>
+            <div className="sn">
+              {vm > 0 && <PriceChange small badge={deltaBadge(vm)} />}
+              {vm === 0 ? 'текущая цена — минимальная' : 'сейчас выше · ' + minDate}
             </div>
-          ))}
+          </div>
         </div>
         <div className="chart">
-          <div className="chart-y">
-            {yt.map((t) => <div key={t.label} className="y-tick" style={{ top: t.top }}>{t.label}</div>)}
-          </div>
-          <div className="chart-plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}
-            role="img" aria-label={'График цены за ' + pl + ': от ' + rub(st.min) + ' до ' + rub(st.max) + ', сейчас ' + rub(st.cur)}>
-            {yt.map((t) => <div key={t.label} className="grid-line" style={{ top: t.top }} />)}
-            <svg viewBox="0 0 1000 100" preserveAspectRatio="none">
-              <path d={line + ' V100 H' + x0 + ' Z'} style={{ fill: 'rgba(20,21,24,0.035)', stroke: 'none' }} />
-              <path d={'M' + x0 + ' ' + Y(st.avg).toFixed(2) + ' H1000'} style={{ fill: 'none', stroke: '#8C8F96', strokeWidth: 1, strokeDasharray: '4 4', vectorEffect: 'non-scaling-stroke' }} />
-              <path d={line} style={{ fill: 'none', stroke: '#141518', strokeWidth: 1.75, strokeLinejoin: 'round', vectorEffect: 'non-scaling-stroke' }} />
-            </svg>
-            <div className="chart-label" style={{ right: 0, top: Y(st.avg) + '%', transform: 'translateY(-130%)', color: 'var(--ink2)' }}>средняя {rub(avgR)}</div>
-            <div className="chart-dot" style={{ left: X(st.minAt) / 10 + '%', top: Y(st.min) + '%', background: 'var(--acc)' }} />
-            <div className="chart-label" style={{ left: X(st.minAt) / 10 + '%', top: Y(st.min) + '%', transform: 'translate(-50%,10px)', color: 'var(--acc)' }}>мин. {rub(st.min)}</div>
-            <div className="chart-dot" style={{ left: '100%', top: Y(st.cur) + '%', background: 'var(--ink)' }} />
-            {h && (
+          <div className="chart-y">{yt.map((t) => <div key={t.label} style={{ top: t.top }}>{t.label}</div>)}</div>
+          <div className="plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}
+            role="img" aria-label={'График цены за ' + pl + ': обычная ' + fmt(st.p25) + '–' + rub(st.p75) + ', минимум ' + rub(st.mn) + ', сейчас ' + rub(st.cur)}>
+            <div className="cor" style={{ top: Y(st.p75) + '%', height: Y(st.p25) - Y(st.p75) + '%' }} />
+            <div className="cor-l label" style={{ top: Y(st.p75) + '%' }}>Обычная цена · {fmt(st.p25)}–{rub(st.p75)}</div>
+            {yt.map((t) => <div key={t.label} className="gl" style={{ top: t.top }} />)}
+            {target && (
               <>
-                <div style={{ position: 'absolute', top: 0, bottom: 0, left: h.left + '%', borderLeft: '1px solid var(--ink)', pointerEvents: 'none' }} />
-                <div className="chart-dot" style={{ left: h.left + '%', top: Y(h.price) + '%', background: '#fff', border: '2px solid var(--ink)', boxShadow: 'none', pointerEvents: 'none' }} />
-                <div className="chart-tip" style={{ left: Math.min(94, Math.max(6, h.left)) + '%' }}>
-                  <span style={{ opacity: 0.65 }}>{dateLabel(h.t, now)}</span>{'  '}
-                  <span style={{ fontWeight: 600 }}>{rub(h.price)}</span>
+                <div className="tg" style={{ top: Y(target) + '%' }} />
+                <div className="tg-l" style={{ top: Y(target) + '%' }}>цель {rub(target)}</div>
+              </>
+            )}
+            <svg viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><path d={line} /></svg>
+            <div className="mn" style={{ left: X(st.minIdx) / 10 + '%', top: Y(st.mn) + '%' }} />
+            <div className="mn-l" style={{ left: Math.min(92, Math.max(8, X(st.minIdx) / 10)) + '%', top: Y(st.mn) + '%' }}>мин. {rub(st.mn)}</div>
+            <div className="cur" style={{ top: Y(st.cur) + '%' }} />
+            {h != null && (
+              <>
+                <div className="hv" style={{ left: (h / (n - 1)) * 100 + '%' }} />
+                <div className="hv-d" style={{ left: (h / (n - 1)) * 100 + '%', top: Y(st.v[h]) + '%' }} />
+                <div className="tip" style={{ left: Math.min(94, Math.max(6, (h / (n - 1)) * 100)) + '%' }}>
+                  {h === n - 1 ? 'сегодня' : dateLong(st.t[h])} · {rub(st.v[h])}
                 </div>
               </>
             )}
           </div>
           <div />
           <div className="chart-x">
-            {xt.map((t) => <div key={t.left} className="x-tick" style={{ left: t.left, transform: 'translateX(' + t.tx + ')' }}>{t.label}</div>)}
+            <div className="ticks" />
+            {xt.map((t) => <div key={t.left} className="label" style={{ left: t.left, transform: 'translateX(' + t.tx + ')' }}>{t.label}</div>)}
           </div>
         </div>
+        <p className="sentence">{sentence}</p>
       </>
     );
   }
 
   return (
-    <div className="chart-card">
-      <div className="chart-head">
+    <section className="hist" aria-labelledby="hist-h">
+      <div className="hist-head">
         <div>
-          <div className="title">История цены</div>
-          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>{p.store} · {p.demo ? 'ежедневная проверка' : 'по проверкам сервера'}</div>
+          <h2 className="h2" id="hist-h">История цены</h2>
+          <div className="label">{p.store} · {p.demo ? 'проверка каждый день' : 'проверка при каждом поиске'}</div>
         </div>
-        {enough && <Segmented label="Период" options={PERIODS} value={period} onChange={(k) => { setPeriod(k); setHover(null); }} />}
+        {ready && <Segmented label="Период" options={PERIODS} value={period} onChange={(k) => { setPeriod(k); setHover(null); }} />}
       </div>
       {body}
       {children}
-    </div>
+    </section>
   );
 }

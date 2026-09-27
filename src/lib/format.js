@@ -1,7 +1,18 @@
 export const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
-export const fmt = (n) => Math.round(n).toLocaleString('ru-RU');
-export const rub = (n) => fmt(n) + ' ₽';
+// Цены — с неразрывными пробелами: «12 490 ₽» не переносится по строкам.
+export const NBSP = '\u00a0';
+export const fmt = (n) => Math.round(n).toLocaleString('ru-RU').replace(/\s/g, NBSP);
+export const rub = (n) => fmt(n) + NBSP + '₽';
+/** Изменение цены: «↓ −18 %», «↑ +6 %», «= 0 %» (минус U+2212). */
+export const pct = (n) => (n < 0 ? '↓ −' : n > 0 ? '↑ +' : '= ') + Math.abs(n) + NBSP + '%';
+export const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+/** «14 сентября». */
+export const dateLong = (t) => { const d = new Date(t); return d.getDate() + ' ' + MONTHS_G[d.getMonth()]; };
+/** «14 сен». */
+export const dateShort = (t) => { const d = new Date(t); return d.getDate() + ' ' + MONTHS[d.getMonth()]; };
+/** «26.09». */
+export const ddmm = (t = Date.now()) => { const d = new Date(t); return String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0'); };
 
 export const plural = (n, forms) => {
   const a = n % 10, b = n % 100;

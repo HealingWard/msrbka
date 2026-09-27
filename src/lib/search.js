@@ -185,8 +185,8 @@ export function matchProduct(p, c = {}) {
   if (c.budget) {
     const d = Math.round(((p.price - c.budget) / c.budget) * 100);
     r.price = p.price <= c.budget
-      ? { s: 'ok', t: d === 0 ? 'ровно в бюджет' : 'на ' + -d + '% ниже бюджета' }
-      : { s: d <= 10 ? 'near' : 'no', t: 'на ' + d + '% выше бюджета' };
+      ? { s: 'ok', t: d === 0 ? 'ровно в бюджет' : 'на ' + -d + '\u00a0% ниже бюджета' }
+      : { s: d <= 10 ? 'near' : 'no', t: 'на ' + d + '\u00a0% выше бюджета' };
   } else r.price = { s: 'any', t: 'бюджет не указан' };
 
   const score = Math.round(KEYS.reduce((a, k) => a + WEIGHTS[k] * FACTOR[r[k].s], 0));
@@ -211,7 +211,7 @@ export function matchProduct(p, c = {}) {
 
   return {
     score,
-    summary: cap(parts.join(', ')),
+    summary: cap(parts.join(', ')) + '.',
     pills: KEYS.filter((k) => r[k].s !== 'any').map((k) => ({ key: k, label: LABEL[k], s: r[k].s })),
     reasons: KEYS.map((k, i) => ({ key: k, label: i + 1 + '. ' + LABEL[k], text: r[k].t, s: r[k].s })),
   };
