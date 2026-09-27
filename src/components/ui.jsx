@@ -1,25 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon } from './Icon.jsx';
 
 export function Box({ on }) {
-  return <span className={'box' + (on ? ' on' : '')} aria-hidden="true">{on ? '✓' : ''}</span>;
+  return <span className={'cbx' + (on ? ' on' : '')} aria-hidden="true">{on && <Icon name="check" size={10} />}</span>;
 }
 
-export function CheckRow({ on, label, meta, onClick, compact, children }) {
+/** Строка с чекбоксом (фильтры, списки брендов). children — например, квадрат цвета. */
+export function CheckRow({ on, label, meta, onClick, children, className = 'crow' }) {
   return (
-    <button type="button" role="checkbox" aria-checked={on} className={'checkbox-row' + (compact ? ' compact' : '')} onClick={onClick}>
+    <button type="button" role="checkbox" aria-checked={on} className={className} onClick={onClick}>
       <Box on={on} />
       {children}
-      <span className="label">{label}</span>
-      {meta != null && meta !== '' && <span className="meta">{meta}</span>}
+      <span className="l">{label}</span>
+      {meta != null && meta !== '' && <span className="n">{meta}</span>}
     </button>
   );
 }
 
-export function Segmented({ options, value, onChange, tall, label }) {
+export function Chip({ on, onClick, children, className = '' }) {
   return (
-    <div className={'segmented' + (tall ? ' tall' : '')} role="radiogroup" aria-label={label}>
+    <button type="button" aria-pressed={!!on} className={'chip' + (on ? ' on' : '') + (className ? ' ' + className : '')} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+export function Segmented({ options, value, onChange, label }) {
+  return (
+    <div className="seg" role="radiogroup" aria-label={label}>
       {options.map(([k, l]) => (
-        <button key={k} type="button" role="radio" aria-checked={value === k} className={value === k ? 'on' : ''} onClick={() => onChange(k)}>
+        <button key={String(k)} type="button" role="radio" aria-checked={value === k} className={value === k ? 'on' : ''} onClick={() => onChange(k)}>
           {l}
         </button>
       ))}
@@ -27,12 +37,38 @@ export function Segmented({ options, value, onChange, tall, label }) {
   );
 }
 
-export function Tags({ items, variant = '' }) {
+/** Бейджи критериев запроса: «Бренд Storeez», «Размер M». */
+export function Badges({ items, small }) {
   return items.map((x) => (
-    <span key={x.k} className={'tag ' + variant} title={x.t || undefined}>
-      <span className="k">{x.k}</span><span className="v">{x.v}</span>
+    <span key={x.k} className={'badge' + (small ? ' sm' : '')} title={x.t || x.v}>
+      <span className="k">{x.k}</span>{x.v}
     </span>
   ));
+}
+
+/** Изменение цены: «↓ −18 %», «↑ +6 %» или «МИНИМУМ ЗА 90 ДНЕЙ». */
+export function PriceChange({ badge, small, title, children }) {
+  if (!badge) return null;
+  return (
+    <span className={'chg ' + badge.tone + (small ? ' sm' : '')} title={title}>{badge.text}{children}</span>
+  );
+}
+
+/** Лента-прогресс: жёлтая заливка с делениями, трек tape-soft, когда цель достигнута. */
+export function Tape({ value, done }) {
+  return <div className={'tape' + (done ? ' done' : '')}><i style={{ width: Math.round(Math.max(0, Math.min(1, value)) * 100) + '%' }} /></div>;
+}
+
+/** Фото вещи целиком (contain); если его нет или оно не загрузилось — полосатая заглушка с подписью. */
+export function Photo({ src, label, className = '', style }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className={'ph ' + className} style={style}>
+      {src && !failed
+        ? <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
+        : label ? <span className="ph-l">{label}</span> : null}
+    </div>
+  );
 }
 
 /** Закрывает выпадающее меню по клику снаружи и по Escape. */
@@ -52,31 +88,34 @@ export function useDismiss(open, onClose) {
   return ref;
 }
 
-/** Выпадающий список с чекбоксами и поиском — для брендов. */
+/** Выпадающий список брендов с поиском и чекбоксами; можно добавить свой бренд. */
 export function BrandPicker({ brands, selected, onToggle, onAdd, footer, meta, wide, label, emptyLabel }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const close = () => setOpen(false);
   const ref = useDismiss(open, close);
-  const list = brands.filter((b) => b.toLowerCase().includes(q.trim().toLowerCase()));
+  const qq = q.trim().toLowerCase();
+  const list = brands.filter((b) => b.toLowerCase().includes(qq));
+  const canAdd = qq.length >= 2 && !brands.some((b) => b.toLowerCase() === qq);
   return (
     <div className="dd" ref={ref}>
       <button type="button" className={'dd-trigger' + (wide ? ' wide' : '')} aria-expanded={open} onClick={() => { setOpen(!open); setQ(''); }}>
-        <span className="k">Бренды</span><span className="v">{label || emptyLabel}</span><span className="caret">▾</span>
+        <span className="k">Бренды</span><span className="v">{label || emptyLabel}</span><Icon name="chevron-down" size={14} />
       </button>
       {open && (
-        <div className="dd-panel" style={wide ? { width: 320 } : undefined}>
-          <input className="dd-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Найти бренд" autoFocus />
-          <div className="dd-list" style={wide ? { maxHeight: 300 } : undefined}>
+        <div className={'dd-panel' + (wide ? ' wide' : '')}>
+          <input className="field" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Найти бренд" autoFocus aria-label="Найти бренд" />
+          <div className="dd-list">
             {list.map((b) => (
-              <CheckRow key={b} on={selected.includes(b)} label={b} meta={meta ? meta(b) : null} onClick={() => onToggle(b)} />
+              <CheckRow key={b} className="dd-opt" on={selected.includes(b)} label={b} meta={meta ? meta(b) : null} onClick={() => onToggle(b)} />
             ))}
-            {q.trim().length >= 2 && !brands.some((b) => b.toLowerCase() === q.trim().toLowerCase()) && (
-              <button type="button" className="checkbox-row" onClick={() => { const b = q.trim(); onAdd?.([b]); onToggle(b); setQ(''); }}>
-                <span className="box" aria-hidden="true">+</span><span className="label">Добавить бренд «{q.trim()}»</span>
+            {canAdd && (
+              <button type="button" className="dd-opt" onClick={() => { const b = q.trim(); onAdd?.([b]); onToggle(b); setQ(''); }}>
+                <span className="cbx" aria-hidden="true"><Icon name="plus" size={10} style={{ color: 'var(--ink)' }} /></span>
+                <span className="l">Добавить бренд «{q.trim()}»</span>
               </button>
             )}
-            {!list.length && q.trim().length < 2 && <div className="dd-empty">Ничего не нашлось</div>}
+            {!list.length && !canAdd && <div className="dd-empty">Такого бренда нет в списке</div>}
           </div>
           {footer && footer(close)}
         </div>

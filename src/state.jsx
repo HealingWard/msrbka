@@ -25,16 +25,17 @@ const seedSaved = () => [
     crit: { brands: [], size: 'S', color: ['чёрный'], budget: null }, last: ago(24, 21, 40) },
 ];
 // Демо-избранное — только без сервера: в живом режиме избранное начинается с реальных товаров.
-const seedFavs = () => (isLive() ? {} : {
-  t1: { addedAt: ago(40), coll: 'c1' }, t4: { addedAt: ago(21), coll: 'c1' }, t12: { addedAt: ago(9), coll: 'c1' },
-  s1: { addedAt: ago(60), coll: 'c2' }, s3: { addedAt: ago(33), coll: 'c2' }, t8: { addedAt: ago(14), coll: 'c3' },
-  s6: { addedAt: ago(5), coll: '' },
-});
+// [дней назад, список, цель как доля текущей цены]
+const DEMO_FOLLOW = { t1: [40, 'c1', 0.9], t4: [21, 'c1', null], t12: [9, 'c1', 0.93], s1: [60, 'c2', 1.03], s3: [33, 'c2', 0.9], t8: [14, 'c3', null], s6: [5, 'c3', 0.95] };
+const seedFavs = () => (isLive() ? {} : Object.fromEntries(Object.entries(DEMO_FOLLOW).map(([id, [d, coll, f]]) => {
+  const p = DEMO_BY_ID[id];
+  return [id, { addedAt: ago(d), coll, target: f && p ? Math.floor((p.price * f) / 100) * 100 : null }];
+})));
 const MAX_CACHED_RUNS = 4;
 const seedColls = () => [
-  { id: 'c1', name: 'Тренч на осень' }, { id: 'c2', name: 'Обувь' }, { id: 'c3', name: 'Подарки' },
+  { id: 'c1', name: 'Себе, осень' }, { id: 'c2', name: 'Маше' }, { id: 'c3', name: 'Маме' },
 ];
-const seedPrefs = () => ({ selStores: ['Stockmann', 'Lamoda'], selBrands: [], cats: ['Одежда'], view: 'grid', askClarify: true, v: 2 });
+const seedPrefs = () => ({ selStores: ['Stockmann', 'Lamoda'], selBrands: [], cats: ['Одежда'], view: 'grid', tableDark: true, askClarify: true, v: 2 });
 
 const AppContext = createContext(null);
 
@@ -129,14 +130,23 @@ export function AppProvider({ children }) {
 
   const deleteSearch = useCallback((id) => setSaved((list) => list.filter((s) => s.id !== id)), [setSaved]);
 
-  const toggleFav = useCallback((item, coll = '') => {
+  /** Следить за ценой / перестать. Новая вещь попадает в указанный список или в первый. */
+  const toggleFav = useCallback((item, coll) => {
     setFavs((f) => {
       const next = { ...f };
       if (next[item.id]) delete next[item.id];
-      else next[item.id] = { addedAt: new Date().toISOString(), coll, item: snapshot(item), priceAtAdd: item.price };
+      else next[item.id] = { addedAt: new Date().toISOString(), coll: coll ?? colls[0]?.id ?? '', item: snapshot(item), priceAtAdd: item.price, target: null };
       return next;
     });
-  }, [setFavs]);
+  }, [setFavs, colls]);
+
+  /** Цель по цене; если за вещью ещё не следят — начинаем следить. */
+  const setTarget = useCallback((item, target) => {
+    setFavs((f) => {
+      const cur = f[item.id] || { addedAt: new Date().toISOString(), coll: colls[0]?.id ?? '', item: snapshot(item), priceAtAdd: item.price };
+      return { ...f, [item.id]: { ...cur, target: target || null } };
+    });
+  }, [setFavs, colls]);
 
   /** Обновляет снимок товара в избранном (после открытия карточки с актуальной ценой). */
   const refreshFav = useCallback((item) => {
@@ -186,9 +196,9 @@ export function AppProvider({ children }) {
   const value = useMemo(() => ({
     saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
-    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
+    runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
   }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, setQuery, setPending, setLastRun, setPref,
-    setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
+    setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

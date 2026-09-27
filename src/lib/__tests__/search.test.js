@@ -53,7 +53,7 @@ describe('matchProduct', () => {
   it('даёт 100% при полном совпадении', () => {
     const m = matchProduct(PRODUCT_BY_ID.t1, { brands: ['12 Storeez'], size: 'M', color: ['бежевый'], budget: 25000 });
     expect(m.score).toBe(100);
-    expect(m.summary).toBe('Совпадают бренд, размер и цвет, в пределах бюджета');
+    expect(m.summary).toBe('Совпадают бренд, размер и цвет, в пределах бюджета.');
   });
   it('снижает оценку за близкий цвет и другой бренд', () => {
     const m = matchProduct(PRODUCT_BY_ID.t4, { brands: ['12 Storeez'], size: 'M', color: ['бежевый'], budget: 25000 });
@@ -299,5 +299,32 @@ describe('товары для дома', () => {
     const r = getResults(items, { brands: [], size: 'евро' }, emptyFilters(), 'match', { types: detectTypes('постельное белье') });
     expect(r.base.map((x) => x.p.sizes[0]).sort()).toEqual(['200x220', 'евро']);
     expect(r.base[0].m.reasons.find((x) => x.key === 'size').s).toBe('ok');
+  });
+});
+
+describe('обычная цена и статусы', async () => {
+  const { priceStats, itemStatus, goalProgress, changeBadge } = await import('../pricing.js');
+  const DAY = 86400000, now = Date.UTC(2026, 8, 27, 12);
+  const pts = (arr) => arr.map(([d, price]) => ({ t: now - d * DAY, price }));
+  it('истории мало — «обычной цены» ещё нет', () => {
+    const st = priceStats(pts([[0, 10000]]), 90, now);
+    expect(st.known).toBe(false);
+    expect(changeBadge(st)).toBe(null);
+    expect(itemStatus(10000, null, st).note).toBe('история цены копится');
+  });
+  it('коридор, «к обычной» и минимум', () => {
+    const st = priceStats(pts([[80, 12000], [40, 10000], [10, 12000], [0, 9000]]), 90, now);
+    expect(st.known).toBe(true);
+    expect(st.mn).toBe(9000);
+    expect(st.isMin).toBe(true);
+    expect(st.va).toBeLessThan(0);
+    expect(changeBadge(st).tone).toBe('min');
+    expect(itemStatus(9000, null, st).k).toBe('pora');
+  });
+  it('цель: достигнута, ждём, прогресс', () => {
+    expect(itemStatus(9000, 9500, null)).toMatchObject({ k: 'pora', note: 'цель достигнута' });
+    expect(itemStatus(10000, 9500, null).k).toBe('wait');
+    expect(goalProgress(12000, 10000, 8000)).toBe(0.5);
+    expect(goalProgress(12000, 7000, 8000)).toBe(1);
   });
 });

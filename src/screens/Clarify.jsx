@@ -4,7 +4,8 @@ import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { GENDER_LABEL, categoryLabel, colorList, colorStr, sizeRequired } from '../lib/search.js';
-import { BrandPicker, Tags } from '../components/ui.jsx';
+import { Badges, BrandPicker, Chip } from '../components/ui.jsx';
+import { Icon } from '../components/Icon.jsx';
 import { useApp } from '../state.jsx';
 
 const ANY_BRAND = 'Любой бренд';
@@ -18,10 +19,10 @@ function questionsFor(ds) {
     store: { title: 'В каких магазинах искать?', hint: 'Ищу только в отмеченных — выберите те, которым доверяете', opts: STORE_NAMES, multi: true, required: true, noCustom: true },
     size: ds === 'home'
       ? { title: 'Какой размер?', hint: 'Для постельного белья — покажу комплекты нужного размера; для остального выберите «не важно»', opts: SIZE_OPTS.home, ph: 'Свой, например 200×220' }
-      : { title: 'Какой размер?', hint: 'Покажу только товары, где ваш размер есть в наличии', opts: SIZE_OPTS[ds] || SIZE_OPTS.trench, required: true, ph: 'Свой, например 44' },
-    brand: { title: 'Есть предпочтения по бренду?', hint: 'Бренд — главный критерий при ранжировании', multi: true, ph: 'Другой бренд' },
+      : { title: 'Какой размер?', hint: 'Покажу только вещи, где ваш размер есть в наличии', opts: SIZE_OPTS[ds] || SIZE_OPTS.trench, required: true, ph: 'Свой, например 44' },
+    brand: { title: 'Есть предпочтения по бренду?', hint: 'Бренд — главный критерий при сравнении', multi: true, ph: 'Другой бренд' },
     color: { title: 'Какой цвет?', hint: 'Близкие оттенки тоже покажу, но ниже', opts: ['бежевый', 'чёрный', 'белый', 'серый', 'синий', 'шоколадный', 'молочный', 'хаки', 'любой'], multi: true, ph: 'Свои, через запятую' },
-    budget: { title: 'Какой бюджет?', hint: 'Товары чуть дороже бюджета отмечу отдельно', opts: ['до 10 000 ₽', 'до 25 000 ₽', 'до 50 000 ₽', 'Не важно'], ph: 'Своя сумма, ₽' },
+    budget: { title: 'Какой бюджет?', hint: 'Вещи чуть дороже бюджета отмечу отдельно', opts: ['до 10 000 ₽', 'до 25 000 ₽', 'до 50 000 ₽', 'Не важно'], ph: 'Своя сумма, ₽' },
   };
 }
 
@@ -72,8 +73,8 @@ export function Clarify() {
   const noStore = missing.includes('store') && !(ans.store || []).length;
   const noSize = sizeRequired(ds) && missing.includes('size') && !ans.size && !(custom.size || '').trim();
   const errText = noStore && noSize
-    ? 'Отметьте магазины и укажите размер — это обязательные параметры.'
-    : noStore ? 'Отметьте хотя бы один магазин — без этого искать негде.' : 'Укажите размер — в выдаче будут только товары в вашем размере.';
+    ? 'Отметьте магазины и укажите размер — без них не получится отмерить точно.'
+    : noStore ? 'Отметьте хотя бы один магазин.' : 'Укажите размер — в выдаче будут только вещи вашего размера.';
 
   const apply = (skip) => {
     const { crit, stores } = resolve(pending, ans, custom, skip);
@@ -94,33 +95,33 @@ export function Clarify() {
   const inResults = (b) => {
     if (isLive()) return '';
     const n = PRODUCTS.filter((p) => p.ds === ds && p.brand === b).length;
-    return n ? n + ' в демо-каталоге' : '';
+    return n ? n + ' в выдаче' : '';
   };
 
   return (
-    <div className="page clarify">
-      <button type="button" className="link-btn back" onClick={() => navigate('/')}>← Изменить запрос</button>
-      <div className="mono-label">Уточнение · {missing.length} {plural(missing.length, ['вопрос', 'вопроса', 'вопросов'])}</div>
-      <h1>«{pending.q}»</h1>
-      <div className="tags">
-        <span className="muted" style={{ fontSize: 13, marginRight: 4 }}>Уже понятно</span>
-        <Tags items={known} />
+    <div className="page w-clarify">
+      <button type="button" className="back" style={{ marginBottom: 40 }} onClick={() => navigate('/')}><Icon name="arrow-left" size={16} />Изменить запрос</button>
+      <div className="label">Уточнение · {missing.length} {plural(missing.length, ['вопрос', 'вопроса', 'вопросов'])}</div>
+      <h1 className="h1" style={{ margin: '8px 0 16px' }}>«{pending.q}»</h1>
+      <div className="badges">
+        <span className="small muted" style={{ marginRight: 4 }}>Уже понятно</span>
+        <Badges items={known} />
       </div>
-      <p className="lead">Без этих деталей в выдаче будет много лишнего. Выберите вариант или впишите свой — остальное я уже понял из запроса.</p>
-      <div className="questions">
+      <p className="muted" style={{ margin: '24px 0', maxWidth: 600, textWrap: 'pretty' }}>Чтобы отмерить точно, нужно ещё несколько деталей. Выберите вариант или впишите свой.</p>
+      <div className="q-list">
         {missing.map((k, i) => {
           const q = Q[k];
           return (
-            <section key={k} className="question" aria-labelledby={'q-' + k}>
-              <div className="question-head">
-                <span className="question-num">{String(i + 1).padStart(2, '0')}</span>
+            <section key={k} className="qcard" aria-labelledby={'q-' + k}>
+              <div className="qcard-head">
+                <span className="num">{String(i + 1).padStart(2, '0')}</span>
                 <div>
-                  <div className="question-title" id={'q-' + k}>{q.title}{q.required && <span className="required">обязательно</span>}</div>
-                  <div className="question-hint">{q.hint}</div>
+                  <div className="t" id={'q-' + k}>{q.title}{q.required && <span className="req">обязательно</span>}</div>
+                  <div className="small muted" style={{ marginTop: 4 }}>{q.hint}</div>
                 </div>
               </div>
               {k === 'brand' ? (
-                <div className="question-opts">
+                <div className="qcard-opts">
                   <BrandPicker wide brands={allBrands()} selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
                     label={qBrands.length ? (qBrands.length <= 2 ? qBrands.join(', ') : qBrands[0] + ' +' + (qBrands.length - 1)) : ''}
                     meta={inResults}
@@ -131,17 +132,16 @@ export function Clarify() {
                         <button type="button" onClick={() => setAns((st) => ({ ...st, brand: [] }))}>Сбросить</button>
                       </div>
                     )} />
-                  <button type="button" className={'chip chip-xl' + (anyOn ? ' on' : '')} aria-pressed={anyOn}
-                    onClick={() => setAns((st) => ({ ...st, brand: anyOn ? [] : [ANY_BRAND] }))}>{ANY_BRAND}</button>
+                  <Chip className="lg" on={anyOn} onClick={() => setAns((st) => ({ ...st, brand: anyOn ? [] : [ANY_BRAND] }))}>{ANY_BRAND}</Chip>
                 </div>
               ) : (
-                <div className="question-opts">
+                <div className="qcard-opts">
                   {q.opts.map((o) => {
                     const on = q.multi ? (ans[k] || []).includes(o) : ans[k] === o;
-                    return <button key={o} type="button" aria-pressed={on} className={'chip chip-lg' + (on ? ' on' : '')} onClick={() => pick(k, q, o)}>{o}</button>;
+                    return <Chip key={o} on={on} onClick={() => pick(k, q, o)}>{o}</Chip>;
                   })}
                   {!q.noCustom && (
-                    <input className="custom-input" value={custom[k] || ''} placeholder={q.ph} aria-label={q.ph}
+                    <input className="field-dashed" value={custom[k] || ''} placeholder={q.ph} aria-label={q.ph}
                       onChange={(e) => { const v = e.target.value; setCustom((st) => ({ ...st, [k]: v })); }}
                       onKeyDown={(e) => { if (e.key === 'Enter') apply(false); }} />
                   )}
@@ -151,7 +151,7 @@ export function Clarify() {
           );
         })}
       </div>
-      {tried && (noStore || noSize) && <div className="error" role="alert">{errText}</div>}
+      {tried && (noStore || noSize) && <div className="err" role="alert">{errText}</div>}
       <div className="actions">
         <button type="button" className="btn btn-primary" onClick={() => apply(false)}>Показать результаты</button>
         <button type="button" className="btn btn-secondary" onClick={() => apply(true)}>Пропустить необязательные</button>
