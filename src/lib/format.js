@@ -5,7 +5,7 @@ export const NBSP = '\u00a0';
 export const fmt = (n) => Math.round(n).toLocaleString('ru-RU').replace(/\s/g, NBSP);
 export const rub = (n) => fmt(n) + NBSP + '₽';
 /** Изменение цены: «↓ −18 %», «↑ +6 %», «= 0 %» (минус U+2212). */
-export const pct = (n) => (n < 0 ? '↓ −' : n > 0 ? '↑ +' : '= ') + Math.abs(n) + NBSP + '%';
+export const pct = (n) => (n < 0 ? '↓ −' : n > 0 ? '↑ +' : '= ') + String(Math.abs(n)).replace('.', ',') + NBSP + '%';
 export const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 /** «14 сентября». */
 export const dateLong = (t) => { const d = new Date(t); return d.getDate() + ' ' + MONTHS_G[d.getMonth()]; };

@@ -4,7 +4,7 @@ import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { detectTypes } from '../lib/search.js';
 import { priceAt } from '../lib/history.js';
-import { deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
+import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
 import { useHistories } from '../lib/useHistories.js';
 import { startSearch } from '../lib/startSearch.js';
 import { isLive } from '../lib/config.js';
@@ -29,7 +29,7 @@ function useFollowRows(app) {
     const cur = item.price;
     const was = fv.priceAtAdd || priceAt(pts, new Date(fv.addedAt).getTime()) || cur;
     const tg = fv.target || null;
-    return { id, item, cur, was, tg, st, dl: Math.round(((cur - was) / was) * 100), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
+    return { id, item, cur, was, tg, st, dl: changePct(cur, was), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
   });
 }
 

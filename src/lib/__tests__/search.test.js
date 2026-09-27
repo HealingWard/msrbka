@@ -328,3 +328,15 @@ describe('обычная цена и статусы', async () => {
     expect(goalProgress(12000, 7000, 8000)).toBe(1);
   });
 });
+
+describe('изменение цены с момента добавления', async () => {
+  const { changePct } = await import('../pricing.js');
+  const { pct } = await import('../format.js');
+  it('маленькое изменение не превращается в «= 0 %»', () => {
+    expect(changePct(24890, 25000)).toBe(-0.4);
+    expect(pct(changePct(24890, 25000))).toBe('↓ −0,4 %');
+    expect(changePct(99990, 100000)).toBe(-0.1);
+    expect(changePct(21990, 21990)).toBe(0);
+    expect(changePct(18000, 20000)).toBe(-10);
+  });
+});

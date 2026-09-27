@@ -6,7 +6,7 @@ import { priceAt } from '../lib/history.js';
 import { productView } from '../lib/product.js';
 import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
-import { changeBadge, goalProgress, priceStats } from '../lib/pricing.js';
+import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing.js';
 import { withCurrent } from '../lib/useHistories.js';
 import { PriceChart } from '../components/PriceChart.jsx';
 import { Icon } from '../components/Icon.jsx';
@@ -75,7 +75,7 @@ export function Product({ id, from }) {
   if (fav) {
     const addedAt = new Date(fav.addedAt).getTime();
     const was = fav.priceAtAdd || priceAt(points, addedAt) || p.price;
-    const dl = Math.round(((p.price - was) / was) * 100);
+    const dl = changePct(p.price, was);
     follow = { since: dateLong(addedAt), was, dl, prog: goalProgress(was, p.price, target) };
   }
   const sugs = [
