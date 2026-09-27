@@ -1,7 +1,7 @@
 // Откуда берутся товары: сервер поиска (живой режим) или демо-каталог.
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
-import { extDetails, extSearch, extensionVersion } from './extension.js';
+import { extDetails, extRecheck, extSearch, extensionVersion } from './extension.js';
 import { BED_SIZE, CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
@@ -193,6 +193,31 @@ export async function fetchDetails(item, signal) {
 }
 
 /** История цен для списка товаров (избранное, выгрузка). */
+/**
+ * Свежие цены товаров из избранного через расширение (Stockmann и Lamoda).
+ * → { status: 'ok'|'noext'|'demo'|'none'|'error', results: [{ id, status: 'ok'|'noprice'|'blocked'|'error', item }], error }
+ */
+export async function recheckFavorites(items, onProgress) {
+  if (!isLive()) return { status: 'demo', results: [] };
+  const byUrl = new Map(items.filter((p) => !p.demo && p.url && storeByName(p.store)?.ext).map((p) => [p.url, p]));
+  if (!byUrl.size) return { status: 'none', results: [] };
+  if (!(await extensionVersion())) return { status: 'noext', results: [], error: NOEXT_ERROR };
+  let r;
+  try {
+    r = await extRecheck([...byUrl.keys()], { onProgress });
+  } catch (e) {
+    return { status: 'error', results: [], error: e.message };
+  }
+  const results = (r.items || []).map((x) => {
+    const fav = byUrl.get(x.url);
+    if (!fav) return null;
+    const item = x.item ? liveItem({ ...x.item, store: fav.store, id: fav.id, url: fav.url }) : null;
+    return { id: fav.id, status: x.status, item };
+  }).filter(Boolean);
+  recordPrices(results.filter((x) => x.status === 'ok' && x.item && x.item.price).map((x) => x.item));
+  return { status: r.status === 'error' && !results.length ? 'error' : 'ok', results, error: r.error };
+}
+
 export async function fetchHistories(items, signal) {
   const out = {};
   const live = [];

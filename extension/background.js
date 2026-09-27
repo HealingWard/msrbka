@@ -225,6 +225,38 @@ async function detailsJob(url, send) {
   }
 }
 
+/** Свежие цены товаров из избранного: открывает карточки по очереди в одном свёрнутом окне, без кэша. */
+async function recheckJob(urls, send) {
+  const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, 100);
+  if (!list.length) return send({ pricel: 'result', status: 'empty', items: [] });
+  const win = await openWindow();
+  const out = [];
+  try {
+    for (let i = 0; i < list.length; i++) {
+      const url = list[i];
+      const [storeId, s] = storeForUrl(url);
+      send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length });
+      let r = null;
+      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { r = null; }
+      if (r && r.item && r.item.price) {
+        await saveDetails(url, r.item);
+        out.push({ url, status: 'ok', item: { ...r.item, url, store: s.name, storeId } });
+      } else if (r && r.item) {
+        // Карточка открылась, но цены нет — обычно товар распродан или снят с продажи.
+        out.push({ url, status: 'noprice', item: { ...r.item, url, store: s.name, storeId } });
+      } else {
+        out.push({ url, status: r && r.blocked ? 'blocked' : 'error' });
+      }
+      if (i < list.length - 1) await sleep(900);
+    }
+    send({ pricel: 'result', status: 'ok', items: out });
+  } catch (e) {
+    send({ pricel: 'result', status: 'error', items: out, error: String(e.message || e) });
+  } finally {
+    await closeWindow(win);
+  }
+}
+
 const BRANDS_TTL = 7 * 86400e3;
 
 /** Полный список брендов магазина со страницы «Все бренды» (кэш на неделю). */
@@ -266,6 +298,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.limit, send);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
     else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
+    else if (m.type === 'recheck') recheckJob(m.urls, send);
   });
 });
 
