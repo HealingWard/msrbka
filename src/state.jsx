@@ -152,8 +152,14 @@ export function AppProvider({ children }) {
         const cur = next[r.id];
         if (!cur) continue;
         if (r.status === 'ok' && r.item) {
-          const snap = snapshot(r.item);
-          next[r.id] = { ...cur, item: { ...snap, image: cur.item?.image || snap.image }, checkedAt: at, checkStatus: 'ok' };
+          // Пустые поля карточки (бренд, цвет…) не затирают сохранённые.
+          const merged = { ...(cur.item || {}) };
+          for (const [k, v] of Object.entries(snapshot(r.item))) {
+            if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) merged[k] = v;
+          }
+          if (cur.item?.image) merged.image = cur.item.image;
+          if (r.item.old == null) merged.old = null; // скидка закончилась
+          next[r.id] = { ...cur, item: merged, checkedAt: at, checkStatus: 'ok' };
         } else if (r.status === 'noprice') {
           next[r.id] = { ...cur, item: { ...cur.item, stock: 'Нет в наличии' }, checkedAt: at, checkStatus: 'noprice' };
         } else {
