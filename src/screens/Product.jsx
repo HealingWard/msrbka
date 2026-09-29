@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ALLSIZES } from '../data/catalog.js';
 import { dateLong, ddmm, pct, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
@@ -6,11 +6,11 @@ import { priceAt } from '../lib/history.js';
 import { productView } from '../lib/product.js';
 import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
-import { changeBadge, goalProgress, priceStats } from '../lib/pricing.js';
+import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing.js';
 import { withCurrent } from '../lib/useHistories.js';
 import { PriceChart } from '../components/PriceChart.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { Chip, Photo, PriceChange, Tape } from '../components/ui.jsx';
+import { Chip, Photo, PriceChange, PromoTag, Tape } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const BACK = { results: 'К результатам', lists: 'К спискам', searches: 'К моим поискам' };
@@ -20,7 +20,11 @@ export function Product({ id, from }) {
   const [photo, setPhoto] = useState(0);
   const [goalOpen, setGoalOpen] = useState(false);
   const [goalVal, setGoalVal] = useState('');
-  const base = app.findItem(id);
+  // Вещь держим и после «Больше не следить»: иначе, открытая из списка, она пропадала бы со страницы.
+  const found = app.findItem(id);
+  const keep = useRef(found);
+  if (found) keep.current = found;
+  const base = found || keep.current;
   const [details, setDetails] = useState({ item: null, history: [], loading: true, error: null, checkedAt: null });
 
   const { refreshFav } = app;
@@ -75,7 +79,7 @@ export function Product({ id, from }) {
   if (fav) {
     const addedAt = new Date(fav.addedAt).getTime();
     const was = fav.priceAtAdd || priceAt(points, addedAt) || p.price;
-    const dl = Math.round(((p.price - was) / was) * 100);
+    const dl = changePct(p.price, was);
     follow = { since: dateLong(addedAt), was, dl, prog: goalProgress(was, p.price, target) };
   }
   const sugs = [
@@ -125,6 +129,7 @@ export function Product({ id, from }) {
             <span className="price">{v.priceStr}</span>
             {v.hasOld && <span className="old">{v.oldStr}</span>}
             <PriceChange badge={changeBadge(st90)} title="к обычной цене за 90 дней" />
+            <PromoTag promo={p.promo} />
           </div>
 
           <div className="spec">

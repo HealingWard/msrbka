@@ -1,6 +1,6 @@
 import { plural, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { baseProducts, criteriaChips, runKey } from '../lib/search.js';
+import { criteriaChips, detectTypes, emptyFilters, getResults, runKey } from '../lib/search.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_ITEMS } from '../lib/items.js';
 import { Icon } from '../components/Icon.jsx';
@@ -25,7 +25,7 @@ export function Searches() {
           const pool = isLive()
             ? (cached ? x.stores.flatMap((n) => cached.stores[n]?.items || []) : null)
             : DEMO_ITEMS.filter((p) => p.ds === x.ds && x.stores.includes(p.store));
-          const found = pool ? baseProducts(pool, x.crit) : null;
+          const found = pool ? getResults(pool, x.crit, emptyFilters(), 'match', { types: detectTypes(x.q) }).base.map((b) => b.p) : null;
           const meta = ['Последний раз ' + whenStr(x.last)];
           if (found) meta.push(found.length + ' ' + plural(found.length, ['вещь', 'вещи', 'вещей']));
           if (found && found.length) meta.push('от ' + rub(Math.min(...found.map((p) => p.price))));

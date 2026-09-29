@@ -15,15 +15,16 @@ const ago = (days, h = 12, m = 0) => {
   return d.toISOString();
 };
 
-// Стартовое наполнение, чтобы «Мои поиски» и «Избранное» не были пустыми при первом визите.
-const seedSaved = () => [
+// Демо-наполнение «Моих поисков» — только без сервера; в живом режиме там только ваши поиски.
+const DEMO_SAVED_IDS = ['q1', 'q2', 'q3'];
+const seedSaved = () => (isLive() ? [] : [
   { id: 'q1', q: 'бежевый тренч до 25 000', ds: 'trench', stores: STORE_NAMES.slice(),
     crit: { brands: ['12 Storeez', 'Massimo Dutti', 'COS'], size: 'M', color: ['бежевый'], budget: 25000 }, last: ago(2, 18, 12) },
   { id: 'q2', q: 'белые кеды Veja, 38 размер, до 15 000', ds: 'shoes', stores: ['Lamoda', 'Stockmann'],
     crit: { brands: ['Veja'], size: '38', color: ['белый'], budget: 15000 }, last: ago(7, 10, 4) },
   { id: 'q3', q: 'чёрный тренч S', ds: 'trench', stores: ['Lamoda'],
     crit: { brands: [], size: 'S', color: ['чёрный'], budget: null }, last: ago(24, 21, 40) },
-];
+]);
 // Демо-избранное — только без сервера: в живом режиме избранное начинается с реальных товаров.
 // [дней назад, список, цель как доля текущей цены]
 const DEMO_FOLLOW = { t1: [40, 'c1', 0.9], t4: [21, 'c1', null], t12: [9, 'c1', 0.93], s1: [60, 'c2', 1.03], s3: [33, 'c2', 0.9], t8: [14, 'c3', null], s6: [5, 'c3', 0.95] };
@@ -81,13 +82,25 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!prefs.v) setPrefs((p) => ({ ...p, selStores: ['Stockmann', 'Lamoda'], v: 2 }));
   }, [prefs.v, setPrefs]);
+  // v3: из «Моих поисков» убираем демо-поиски, попавшие туда при первом визите.
+  useEffect(() => {
+    if ((prefs.v || 0) >= 3) return;
+    if (isLive()) setSaved((list) => list.filter((x) => !DEMO_SAVED_IDS.includes(x.id)));
+    setPrefs((p) => ({ ...p, v: 3 }));
+  }, [prefs.v, setPrefs, setSaved]);
 
   const setPref = useCallback((k, v) => setPrefs((p) => ({ ...p, [k]: typeof v === 'function' ? v(p[k]) : v })), [setPrefs]);
 
+  // Каждый поиск сразу попадает в «Мои поиски» (новый — наверх, повторный — обновляет дату и параметры).
   const runSearch = useCallback((run) => {
     const now = new Date().toISOString();
     setLastRun({ ...run, at: now });
-    setSaved((list) => list.map((s) => (s.q === run.q && s.ds === run.ds ? { ...s, last: now } : s)));
+    setSaved((list) => {
+      const same = (s) => s.q === run.q && s.ds === run.ds;
+      const prev = list.find(same);
+      const entry = { id: prev?.id || 'q' + Date.now(), q: run.q, ds: run.ds, stores: run.stores.slice(), crit: run.crit, last: now };
+      return [entry, ...list.filter((s) => !same(s))].slice(0, 100);
+    });
     // Новый запуск всегда ищет заново.
     const key = runKey(run);
     setResults((r) => { const next = { ...r }; delete next[key]; return next; });
@@ -169,6 +182,7 @@ export function AppProvider({ children }) {
           }
           if (cur.item?.image) merged.image = cur.item.image;
           if (r.item.old == null) merged.old = null; // скидка закончилась
+          merged.promo = r.item.promo || null; // акция могла начаться или закончиться
           next[r.id] = { ...cur, item: merged, checkedAt: at, checkStatus: 'ok' };
         } else if (r.status === 'noprice') {
           next[r.id] = { ...cur, item: { ...cur.item, stock: 'Нет в наличии' }, checkedAt: at, checkStatus: 'noprice' };

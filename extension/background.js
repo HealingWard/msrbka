@@ -107,12 +107,12 @@ async function visit(windowId, url, mode, opts, onNeedHuman) {
 // ——— кэш карточек ———
 
 async function cachedDetails(url) {
-  const k = 'd:' + url;
+  const k = 'd2:' + url; // d2 — с полной галереей фото
   const v = (await chrome.storage.local.get(k))[k];
   return v && Date.now() - v.t < DETAILS_TTL ? v.item : null;
 }
 async function saveDetails(url, item) {
-  await chrome.storage.local.set({ ['d:' + url]: { t: Date.now(), item } });
+  await chrome.storage.local.set({ ['d2:' + url]: { t: Date.now(), item } });
 }
 
 function mergeDetails(item, d) {
@@ -123,6 +123,8 @@ function mergeDetails(item, d) {
     if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
   }
   if (!out.title && d.title) out.title = d.title;
+  // Акция с карточки важнее, чем её отсутствие в выдаче; но и «акции больше нет» с карточки — тоже правда.
+  if ('promo' in d) out.promo = d.promo;
   out.detailed = true;
   return out;
 }

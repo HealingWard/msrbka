@@ -3,14 +3,14 @@ import { dateShort, plural, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
 import { detectTypes } from '../lib/search.js';
-import { deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
+import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
 import { useHistories } from '../lib/useHistories.js';
 import { recheckFavorites } from '../lib/source.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { PriceChange, Tape } from '../components/ui.jsx';
+import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
@@ -44,7 +44,7 @@ export function Lists() {
     return {
       id, item, fv, st, cur, was, tg, addedAt, soldOut,
       list: colls.some((c) => c.id === fv.coll) ? fv.coll : '',
-      dl: Math.round(((cur - was) / was) * 100),
+      dl: changePct(cur, was),
       status: itemStatus(cur, tg, st),
       prog: goalProgress(was, cur, tg),
       checkFailed: fv.checkStatus === 'blocked' || fv.checkStatus === 'error',
@@ -54,7 +54,7 @@ export function Lists() {
   const activeValid = active === 'all' || active === 'none' || colls.some((c) => c.id === active) ? active : 'all';
   const rows = all.filter((r) => activeValid === 'all' || (activeValid === 'none' ? !r.list : r.list === activeValid));
   const sum = (a) => a.reduce((x, r) => x + r.cur, 0);
-  const down = all.filter((r) => r.dl < 0).length;
+  const down = all.filter((r) => r.cur < r.was).length;
   const activeName = activeValid === 'all' ? 'Все вещи' : activeValid === 'none' ? 'Без списка' : colls.find((c) => c.id === activeValid).name;
   const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up']]
     .map(([k, l, ic]) => ({ k, l, ic, n: rows.filter((r) => r.status.k === k).length }));
@@ -94,8 +94,12 @@ export function Lists() {
       else if (x.item.price > before[x.id]) n.up++;
       else n.same++;
     }
+    const crazy = r.results.filter((x) => x.item && inCrazyDays(x.item)).map((x) => x.item);
     const parts = [n.down && 'подешевели ' + n.down, n.up && 'подорожали ' + n.up, n.same && 'без изменений ' + n.same,
       n.gone && 'нет в продаже ' + n.gone, n.failed && 'не открылись ' + n.failed].filter(Boolean);
+    if (r.results.some((x) => x.item?.store === 'Stockmann')) parts.push(crazy.length
+      ? 'в «Сумасшедших днях» Stockmann — ' + crazy.length + ': ' + crazy.map((p) => (p.brand ? p.brand + ' ' : '') + p.title).join(', ')
+      : 'в «Сумасшедших днях» Stockmann — ни одной');
     setCheck({ busy: false, summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.' });
     setTimeout(() => setReload((x) => x + 1), 1500);
   };
@@ -159,6 +163,7 @@ export function Lists() {
               {counts.map((c) => (
                 <span key={c.k}><Icon name={c.ic} size={16} className={ST_COLOR[c.k]} />{c.l} <span className="mono">{c.n}</span></span>
               ))}
+              {rows.some((r) => inCrazyDays(r.item)) && <span><i className="sw10" style={{ background: 'var(--tape)', borderColor: 'var(--tape)' }} />Сумасшедшие дни <span className="mono">{rows.filter((r) => inCrazyDays(r.item)).length}</span></span>}
             </div>
           </div>
 
@@ -177,6 +182,7 @@ export function Lists() {
                         <button type="button" className="item" onClick={() => open(r.id)}>
                           <div className="label">{r.item.store}{type ? ' · ' + type : ''}</div>
                           <div style={{ marginTop: 2 }}>{r.item.brand && <b>{r.item.brand}</b>} {r.item.title}</div>
+                          <PromoTag promo={r.item.promo} />
                         </button>
                         <div className="lst">
                           <Icon name={r.status.icon} size={18} className={ST_COLOR[r.status.k]} />
@@ -184,7 +190,7 @@ export function Lists() {
                         </div>
                         <div className="lnow">
                           <span className="price">{rub(r.cur)}</span>
-                          <PriceChange small badge={deltaBadge(r.dl)} title="с момента добавления">{' '}<span>с {dateShort(r.addedAt)}</span></PriceChange>
+                          <PriceChange small badge={deltaBadge(r.dl)} title={'с момента добавления: было ' + rub(r.was) + ', сейчас ' + rub(r.cur)}>{' '}<span>с {dateShort(r.addedAt)}</span></PriceChange>
                           {(r.soldOut || r.checkFailed || r.fv.checkedAt) && (
                             <span className="sub">{r.soldOut ? 'нет в наличии' : r.checkFailed ? 'не удалось проверить' : 'проверено ' + whenStr(r.fv.checkedAt)}</span>
                           )}

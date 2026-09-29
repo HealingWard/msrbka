@@ -294,6 +294,16 @@
     const im = Array.isArray(images) ? images[0] : null;
     return abs(im?.default?.jpg?.src2x || im?.default?.jpg?.src || (im?.source ? 'https://stockmann.ru' + im.source : null));
   };
+  // Акции Stockmann: «Сумасшедшие дни» (поля cdDay / cdDayDate / cdBadge / cdInfo / showCd — Crazy Days)
+  // и прочие плашки товара (badge, badges, stateBadges, modeBadges, promotions).
+  const badgeText = (b) => clean(typeof b === 'string' ? b : b && typeof b === 'object' ? String(b.text || b.name || b.title || b.label || b.value || '') : '');
+  function stockmannPromo(p) {
+    const crazy = !!(p.showCd || p.cdDay || p.current_day_cd || p.cdBadge || p.cdInfo);
+    const crazyText = badgeText(p.cdBadge) || badgeText(p.cdInfo) || '';
+    const badges = [...new Set([p.badge, ...[].concat(p.badges || [], p.stateBadges || [], p.modeBadges || [], p.promotions || [])].map(badgeText).filter(Boolean))].slice(0, 5);
+    if (!crazy && !badges.length) return null;
+    return { crazy, crazyText, crazyDay: +p.cdDay || +p.current_day_cd || 0, crazyDate: clean(String(p.cdDayDate || '')), badges };
+  }
   function stockmannItem(p) {
     if (!p || !p.name) return null;
     const cur = p.priceDiscount && p.priceDiscount < p.price ? p.priceDiscount : p.price;
@@ -318,6 +328,7 @@
       sku: String(p.xmlId || p.productId || ''),
       gender: clean(String(p.gender || '')),
       detailed: sizes.length > 0 || !!p.noSize,
+      promo: stockmannPromo(p),
     };
   }
   function stockmannExtract(mode) {
@@ -406,7 +417,8 @@
   // Stockmann отдаёт картинки только своим страницам (защита требует cookie, которые браузер не шлёт
   // для картинок на чужом сайте). Поэтому скачиваем уменьшенное фото здесь, на странице магазина,
   // и передаём сайту как data:-URL. Если не вышло — оставляем обычную ссылку.
-  async function inlineImages(items, max = 60) {
+  // all — встроить всю галерею (до 6 фото), а не только главное фото: для страницы вещи.
+  async function inlineImages(items, max = 60, all = false) {
     const host = location.hostname.replace(/^www\./, '');
     if (!host.endsWith('stockmann.ru')) return items;
     const small = (u) => u.replace('/pi/bx2/', '/pi/b/').replace('/pi/ppx2/', '/pi/b/').replace('/pi/pp/', '/pi/b/');
@@ -426,6 +438,14 @@
     const worker = async () => {
       while (queue.length) {
         const it = queue.shift();
+        if (all) {
+          // Галерея: каждое фото — отдельно; не загрузилось — пропускаем.
+          const src = [...new Set([it.image, ...(it.images || [])].filter(Boolean))].slice(0, 6);
+          const got = [];
+          for (const u of src) { const d = u.startsWith('data:') ? u : (await toData(small(u))) || (await toData(u)); if (d) got.push(d); }
+          if (got.length) { it.image = got[0]; it.images = got; }
+          continue;
+        }
         const data = (await toData(small(it.image))) || (await toData(it.image));
         if (data) { it.image = data; it.images = [data]; }
       }
@@ -536,7 +556,7 @@
       const ready = await waitFor(() => blockedState() ? { blocked: blockedState() } : (document.querySelector('h1') ? { ok: 1 } : null), opts.timeoutMs || 20000);
       if (ready && ready.blocked) return { blocked: ready.blocked };
       const exact = storeExtract('product');
-      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact]))[0], source: 'store' };
+      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact], 1, true))[0], source: 'store' };
       await sleep(1000);
       const here = key(location.href);
       const ld = jsonLd();

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PRODUCT_BY_ID } from '../../data/catalog.js';
 import { columnLetter, exportRows, toCSV } from '../export.js';
 import { plural, rub } from '../format.js';
-import { detectTypes, getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams, sizeEq, sizeRequired } from '../search.js';
+import { detectColors, detectTypes, getResults, emptyFilters, matchProduct, missingCriteria, parseQuery, runFromParams, runToParams, sizeEq, sizeRequired } from '../search.js';
 import { DEMO_ITEMS, liveItem } from '../items.js';
 import { storeQuery, storeQueries } from '../source.js';
 import { historyStats, priceAt } from '../history.js';
@@ -129,8 +129,9 @@ describe('живые товары', () => {
     expect(storeQueries({ q: 'Ботильоны или городские ботинки женские 40 размер черные или коричневые', crit: { brands: [], color: ['чёрный', 'коричневый'] } }))
       .toEqual(['Ботильоны женские', 'городские ботинки женские']);
     expect(storeQueries({ q: 'тренч или плащ M', crit: { brands: [] } })).toEqual(['тренч', 'плащ']);
-    expect(storeQueries({ q: 'бежевый тренч или плащ L', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч', 'бежевый плащ']);
-    expect(storeQueries({ q: 'бежевый тренч до 25 000', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч']);
+    expect(storeQueries({ q: 'бежевый тренч или плащ L', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч', 'бежевый плащ', 'тренч']);
+    // С цветом и без: цвет проверяет «Отмерь», а выдача магазина по цвету бывает слишком узкой.
+    expect(storeQueries({ q: 'бежевый тренч до 25 000', crit: { brands: [], color: ['бежевый'] } })).toEqual(['бежевый тренч', 'тренч']);
   });
   it('бренд и цвет берутся из названия, если магазин их не дал', () => {
     const it = liveItem({ id: 'lamoda:X', store: 'Lamoda', url: 'https://www.lamoda.ru/p/x/', title: 'Тренч Gerry Weber бежевого цвета', price: 18990, inStock: true });
@@ -138,13 +139,34 @@ describe('живые товары', () => {
     expect(it.color).toBe('бежевый');
     expect(it.stock).toBe('В наличии');
   });
-  it('неизвестные размер и бренд не обнуляют соответствие', () => {
+  it('неизвестные параметры не дают баллов, а вещь без размера скрывается с причиной', () => {
     const it = liveItem({ id: 'x', store: 'Lamoda', url: 'u', title: 'Тренч', price: 10000 });
     const m = matchProduct(it, { brands: ['Mango'], size: 'M', color: ['бежевый'], budget: 20000 });
-    expect(m.score).toBe(20 + 15 + 10 + 10);
+    expect(m.score).toBe(10);
     expect(m.reasons.find((r) => r.key === 'size').s).toBe('unk');
-    const { base } = getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match');
-    expect(base.length).toBe(1);
+    const r = getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match');
+    expect(r.base.length).toBe(0);
+    expect(r.hiddenWhy).toEqual(['магазин не указал размеры — 1']);
+    expect(getResults([it], { size: 'M', brands: [] }, emptyFilters(), 'match', { showOther: true }).base.length).toBe(1);
+  });
+  it('совпадение размера и цены выше, чем только цены', () => {
+    const a = liveItem({ id: 'a', store: 'Lamoda', url: 'a', title: 'Тапочки', price: 2000, sizes: ['40'], color: 'бирюзовый' });
+    const b = liveItem({ id: 'b', store: 'Market', url: 'b', title: 'Тапочки', price: 400 });
+    const c = { brands: [], size: '40', color: detectColors('бирюзовые'), budget: 25000 };
+    expect(matchProduct(a, c).score).toBe(100);
+    expect(matchProduct(b, c).score).toBeLessThan(matchProduct(a, c).score);
+  });
+  it('размер-диапазон «39-41» подходит под 40, дубли одного предложения схлопываются', () => {
+    const mk = (id, extra) => liveItem({ id, store: 'Яндекс Маркет', url: 'u' + id, title: 'Тапочки', price: 400, image: 'img1', ...extra });
+    const items = [mk('1', { sizes: ['39-41'] }), mk('2', { price: 300, sizes: ['39-41'] }), mk('3', { image: 'img2', sizes: ['36-38'] })];
+    const r = getResults(items, { brands: [], size: '40' }, emptyFilters(), 'match');
+    expect(r.base.map((x) => x.p.id)).toEqual(['2']);
+    expect(r.hiddenWhy).toEqual(['нет размера 40 — 1']);
+  });
+  it('тапочки: сабо и мюли — другой тип', () => {
+    const mk = (id, title) => liveItem({ id, store: 'Lamoda', url: 'u' + id, title, price: 1000 });
+    const r = getResults([mk('1', 'Тапочки'), mk('2', 'Сабо'), mk('3', 'Мюли')], { brands: [] }, emptyFilters(), 'match', { types: detectTypes('тапочки домашние') });
+    expect(r.base.map((x) => x.p.id)).toEqual(['1']);
   });
 });
 
@@ -326,5 +348,17 @@ describe('обычная цена и статусы', async () => {
     expect(itemStatus(10000, 9500, null).k).toBe('wait');
     expect(goalProgress(12000, 10000, 8000)).toBe(0.5);
     expect(goalProgress(12000, 7000, 8000)).toBe(1);
+  });
+});
+
+describe('изменение цены с момента добавления', async () => {
+  const { changePct } = await import('../pricing.js');
+  const { pct } = await import('../format.js');
+  it('маленькое изменение не превращается в «= 0 %»', () => {
+    expect(changePct(24890, 25000)).toBe(-0.4);
+    expect(pct(changePct(24890, 25000))).toBe('↓ −0,4 %');
+    expect(changePct(99990, 100000)).toBe(-0.1);
+    expect(changePct(21990, 21990)).toBe(0);
+    expect(changePct(18000, 20000)).toBe(-10);
   });
 });

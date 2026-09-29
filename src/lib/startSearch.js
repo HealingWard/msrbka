@@ -16,6 +16,8 @@ export function startSearch(app, query) {
   let missing = missingCriteria(crit, p.ds);
   if (!prefs.askClarify) missing = crit.size || !sizeRequired(p.ds) ? [] : ['size'];
   app.setQuery(q);
+  // Бренды, отмеченные на главной, относятся к этому поиску — к следующим они не «прилипают».
+  if (prefs.selBrands.length) app.setPref('selBrands', []);
   if (!prefs.selStores.length || missing.length) {
     // Вопрос о магазинах показываем всегда — с уже отмеченными вариантами.
     missing = ['store', ...missing];

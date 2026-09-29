@@ -1,7 +1,7 @@
 import { GLYPH } from '../lib/search.js';
 import { productView } from '../lib/product.js';
 import { Icon } from './Icon.jsx';
-import { Photo, PriceChange } from './ui.jsx';
+import { Photo, PriceChange, PromoTag } from './ui.jsx';
 
 const stop = (e) => e.stopPropagation();
 const onKeyOpen = (open) => (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) open(); };
@@ -33,6 +33,7 @@ export function ProductCard({ p, m, s, best, fav, onOpen, onFav, checked, label 
           <FollowBtn on={fav} onClick={onFav} />
         </div>
         <div className="label">{label}</div>
+        <PromoTag promo={p.promo} />
         <div>
           {p.brand && <div className="brand">{p.brand}</div>}
           <div className="title">{p.title}</div>
@@ -115,7 +116,7 @@ export function ResultsTable({ rows, dark, favs, onOpen, onFav, checked }) {
             <div key={p.id} className={'trow body' + (best ? ' best' : '')} onClick={() => onOpen(p.id)} onKeyDown={onKeyOpen(() => onOpen(p.id))} tabIndex={0}>
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>
                 <div className="tph">{p.image && <img src={p.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} />}</div>
-                <div style={{ minWidth: 0 }}>{p.brand && <div style={{ fontSize: 13, fontWeight: 700 }}>{p.brand}</div>}<div style={{ lineHeight: '18px' }}>{p.title}</div></div>
+                <div style={{ minWidth: 0 }}>{p.brand && <div style={{ fontSize: 13, fontWeight: 700 }}>{p.brand}</div>}<div style={{ lineHeight: '18px' }}>{p.title}</div><PromoTag promo={p.promo} /></div>
               </div>
               <span>{p.store}</span>
               <div><div className="mono">{v.priceStr}</div>{v.hasOld && <div className="strike">{v.oldStr}</div>}</div>

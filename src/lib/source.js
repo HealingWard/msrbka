@@ -61,6 +61,12 @@ export function storeQueries(run) {
     const core = part.split(/\s+/).filter((w) => !CONFUSING_ADJ.test(' ' + w + ' ')).join(' ').trim();
     if (detectTypes(core).length) parts.push(core);
   }
+  // Цвет в запросе магазина сильно сужает выдачу (у магазина «голубые» могут не называться «бирюзовыми»):
+  // добавляем запрос без цвета — цвет и близкие оттенки проверит «Отмерь» по данным вещей.
+  for (const part of [...parts]) {
+    const plain = part.split(/\s+/).filter((w) => !detectColors(w).length && !/^цвет/i.test(w)).join(' ').trim();
+    if (plain !== part && /[a-zа-яё]{3}/i.test(plain)) parts.push(plain);
+  }
   const uniq = [...new Set(parts.map((x) => x.toLowerCase()))].map((l) => parts.find((x) => x.toLowerCase() === l));
   if (!uniq.length) {
     const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();
@@ -156,9 +162,10 @@ export async function fetchDetails(item, signal) {
   if (item.demo || !isLive()) return { item, history: demoHistory(item.id) };
   const store = storeByName(item.store);
   if (store?.ext) {
-    // Карточка — через расширение (если размеры ещё не собраны), история — с сервера.
+    // Карточка — через расширение (если размеры ещё не собраны или в выдаче было одно фото), история — с сервера.
     let merged = item;
-    if (!item.detailed && (await extensionVersion())) {
+    const historyP = getJson('/api/history?id=' + encodeURIComponent(item.id), signal).then((h) => h[item.id] || []).catch(() => []);
+    if ((!item.detailed || (item.images || []).length < 2) && (await extensionVersion())) {
       try {
         const r = await extDetails(item.url, { signal });
         if (r.status === 'ok' && r.item) {
@@ -176,9 +183,7 @@ export async function fetchDetails(item, signal) {
         if (e.name === 'AbortError') throw e;
       }
     }
-    let history = [];
-    try { history = (await getJson('/api/history?id=' + encodeURIComponent(item.id), signal))[item.id] || []; } catch (e) { if (e.name === 'AbortError') throw e; }
-    return { item: merged, history };
+    return { item: merged, history: await historyP };
   }
   const r = await getJson('/api/product?url=' + encodeURIComponent(item.url), signal);
   const fresh = liveItem(r);

@@ -3,7 +3,7 @@ import { PRODUCTS, STORE_NAMES, allBrands } from '../data/catalog.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { GENDER_LABEL, categoryLabel, colorList, colorStr, sizeRequired } from '../lib/search.js';
+import { GENDER_LABEL, categoryLabel, colorList, colorStr, detectColors, sizeRequired } from '../lib/search.js';
 import { Badges, BrandPicker, Chip } from '../components/ui.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useApp } from '../state.jsx';
@@ -39,7 +39,8 @@ function resolve(pending, ans, custom, skip) {
         : (a || []).filter((x) => x !== ANY_BRAND);
     }
     if (k === 'color') {
-      const v = cu ? cu.toLowerCase().split(/[,/;]+/).map((x) => x.trim()).filter(Boolean) : colorList(a).filter((x) => x !== 'любой');
+      // Свой цвет приводим к словарной форме («бирюзовые» → «бирюзовый»), чтобы он совпадал с цветом вещей.
+      const v = cu ? cu.toLowerCase().split(/[,/;]+/).map((x) => x.trim()).filter(Boolean).map((x) => detectColors(x)[0] || x) : colorList(a).filter((x) => x !== 'любой');
       if (v.length) c.color = v;
     }
     if (k === 'budget') {

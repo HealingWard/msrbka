@@ -48,6 +48,18 @@ export function changeBadge(st, days = 90) {
   return { text: pct(st.va), tone: st.va < 0 ? 'drop' : st.va > 0 ? 'rise' : 'flat' };
 }
 
+/**
+ * Изменение цены в процентах. Меньше 1 % показываем с десятыми (−0,4 %), чтобы изменение
+ * на 110 ₽ у дорогой вещи не выглядело как «= 0 %»; 0 — только когда цена не изменилась.
+ */
+export function changePct(cur, was) {
+  if (!was || cur === was) return 0;
+  const x = ((cur - was) / was) * 100;
+  if (Math.abs(x) >= 1) return Math.round(x);
+  const r = Math.round(x * 10) / 10;
+  return r === 0 ? (x < 0 ? -0.1 : 0.1) : r;
+}
+
 export const deltaBadge = (n) => ({ text: pct(n), tone: n < 0 ? 'drop' : n > 0 ? 'rise' : 'flat' });
 
 /** Спарклайн за 30 дней в поле 200×32 и направление: вниз — сплошная зелёная, вверх — пунктир. */
