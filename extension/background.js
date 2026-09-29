@@ -345,7 +345,21 @@ async function dumpPages(query) {
   return report;
 }
 
+/** Сохраняет открытую сейчас страницу магазина — чтобы прислать её для настройки разбора. */
+async function dumpActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!tab || !storeForUrl(tab.url || '')) throw new Error('откройте страницу товара Stockmann или Lamoda и нажмите кнопку ещё раз');
+  const [res] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, world: 'MAIN', func: () => document.documentElement.outerHTML });
+  const name = 'otmer/page-' + new URL(tab.url).hostname.replace(/^www\./, '') + '-' + Date.now() + '.html';
+  await chrome.downloads.download({ url: toDataUrl(res.result, 'text/html'), filename: name, conflictAction: 'overwrite' });
+  return name;
+}
+
 chrome.runtime.onMessage.addListener((m, _sender, sendResponse) => {
+  if (m && m.type === 'dumpTab') {
+    dumpActiveTab().then((name) => sendResponse({ ok: true, name }), (e) => sendResponse({ ok: false, error: String(e.message || e) }));
+    return true;
+  }
   if (m && m.type === 'dump') {
     dumpPages(m.query || 'бежевый тренч').then((r) => sendResponse({ ok: true, report: r }), (e) => sendResponse({ ok: false, error: String(e) }));
     return true;
