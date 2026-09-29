@@ -10,7 +10,7 @@ import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
+import { PriceChange, PromoTag, Segmented, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
@@ -20,6 +20,7 @@ export function Lists() {
   const app = useApp();
   const { colls } = app;
   const [active, setActive] = useState('all');
+  const [priceF, setPriceF] = useState('all'); // all | changed | down | up — изменение цены с момента добавления
   const [newName, setNewName] = useState(null);
   const [check, setCheck] = useState(null); // { busy, text, summary, error }
   const [exportOpen, setExportOpen] = useState(false);
@@ -52,7 +53,11 @@ export function Lists() {
   });
 
   const activeValid = active === 'all' || active === 'none' || colls.some((c) => c.id === active) ? active : 'all';
-  const rows = all.filter((r) => activeValid === 'all' || (activeValid === 'none' ? !r.list : r.list === activeValid));
+  const listRows = all.filter((r) => activeValid === 'all' || (activeValid === 'none' ? !r.list : r.list === activeValid));
+  const PRICE_TEST = { all: () => true, changed: (r) => r.cur !== r.was, down: (r) => r.cur < r.was, up: (r) => r.cur > r.was };
+  const rows = listRows.filter(PRICE_TEST[priceF]);
+  const priceOpts = [['all', 'Все'], ['changed', 'Цена изменилась'], ['down', 'Подешевели'], ['up', 'Подорожали']]
+    .map(([k, l]) => [k, l + ' · ' + listRows.filter(PRICE_TEST[k]).length]);
   const sum = (a) => a.reduce((x, r) => x + r.cur, 0);
   const down = all.filter((r) => r.cur < r.was).length;
   const activeName = activeValid === 'all' ? 'Все вещи' : activeValid === 'none' ? 'Без списка' : colls.find((c) => c.id === activeValid).name;
@@ -166,6 +171,12 @@ export function Lists() {
               {rows.some((r) => inCrazyDays(r.item)) && <span><i className="sw10" style={{ background: 'var(--tape)', borderColor: 'var(--tape)' }} />Сумасшедшие дни <span className="mono">{rows.filter((r) => inCrazyDays(r.item)).length}</span></span>}
             </div>
           </div>
+          {listRows.length > 0 && (
+            <div className="toolbar" style={{ marginBottom: 0 }}>
+              <Segmented label="Изменение цены с момента добавления" options={priceOpts} value={priceF} onChange={setPriceF} />
+              <span className="small muted">цена сейчас — к цене при добавлении</span>
+            </div>
+          )}
 
           {rows.length > 0 ? (
             <>
@@ -228,8 +239,17 @@ export function Lists() {
             <div className="empty-state" style={{ padding: '80px 40px' }}>
               <div className="ruler mini" aria-hidden="true" />
               <div className="h1">Семь раз отмерь — один раз купи.</div>
-              <div className="muted">В этом списке пока нет вещей.</div>
-              <button type="button" className="btn btn-primary" onClick={() => navigate('/')}>Найти вещь</button>
+              {listRows.length > 0 ? (
+                <>
+                  <div className="muted">{priceF === 'down' ? 'Ни одна вещь в этом списке не подешевела с момента добавления.' : priceF === 'up' ? 'Ни одна вещь в этом списке не подорожала с момента добавления.' : 'Цены вещей в этом списке не менялись с момента добавления.'}</div>
+                  <button type="button" className="btn btn-primary" onClick={() => setPriceF('all')}>Показать все вещи</button>
+                </>
+              ) : (
+                <>
+                  <div className="muted">В этом списке пока нет вещей.</div>
+                  <button type="button" className="btn btn-primary" onClick={() => navigate('/')}>Найти вещь</button>
+                </>
+              )}
             </div>
           )}
         </section>
