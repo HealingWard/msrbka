@@ -294,6 +294,16 @@
     const im = Array.isArray(images) ? images[0] : null;
     return abs(im?.default?.jpg?.src2x || im?.default?.jpg?.src || (im?.source ? 'https://stockmann.ru' + im.source : null));
   };
+  // Акции Stockmann: «Сумасшедшие дни» (поля cdDay / cdDayDate / cdBadge / cdInfo / showCd — Crazy Days)
+  // и прочие плашки товара (badge, badges, stateBadges, modeBadges, promotions).
+  const badgeText = (b) => clean(typeof b === 'string' ? b : b && typeof b === 'object' ? String(b.text || b.name || b.title || b.label || b.value || '') : '');
+  function stockmannPromo(p) {
+    const crazy = !!(p.showCd || p.cdDay || p.current_day_cd || p.cdBadge || p.cdInfo);
+    const crazyText = badgeText(p.cdBadge) || badgeText(p.cdInfo) || '';
+    const badges = [...new Set([p.badge, ...[].concat(p.badges || [], p.stateBadges || [], p.modeBadges || [], p.promotions || [])].map(badgeText).filter(Boolean))].slice(0, 5);
+    if (!crazy && !badges.length) return null;
+    return { crazy, crazyText, crazyDay: +p.cdDay || +p.current_day_cd || 0, crazyDate: clean(String(p.cdDayDate || '')), badges };
+  }
   function stockmannItem(p) {
     if (!p || !p.name) return null;
     const cur = p.priceDiscount && p.priceDiscount < p.price ? p.priceDiscount : p.price;
@@ -318,6 +328,7 @@
       sku: String(p.xmlId || p.productId || ''),
       gender: clean(String(p.gender || '')),
       detailed: sizes.length > 0 || !!p.noSize,
+      promo: stockmannPromo(p),
     };
   }
   function stockmannExtract(mode) {

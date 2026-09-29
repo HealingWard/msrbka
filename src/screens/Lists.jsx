@@ -10,7 +10,7 @@ import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { PriceChange, Tape } from '../components/ui.jsx';
+import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
@@ -94,8 +94,12 @@ export function Lists() {
       else if (x.item.price > before[x.id]) n.up++;
       else n.same++;
     }
+    const crazy = r.results.filter((x) => x.item && inCrazyDays(x.item)).map((x) => x.item);
     const parts = [n.down && 'подешевели ' + n.down, n.up && 'подорожали ' + n.up, n.same && 'без изменений ' + n.same,
       n.gone && 'нет в продаже ' + n.gone, n.failed && 'не открылись ' + n.failed].filter(Boolean);
+    if (r.results.some((x) => x.item?.store === 'Stockmann')) parts.push(crazy.length
+      ? 'в «Сумасшедших днях» Stockmann — ' + crazy.length + ': ' + crazy.map((p) => (p.brand ? p.brand + ' ' : '') + p.title).join(', ')
+      : 'в «Сумасшедших днях» Stockmann — ни одной');
     setCheck({ busy: false, summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.' });
     setTimeout(() => setReload((x) => x + 1), 1500);
   };
@@ -159,6 +163,7 @@ export function Lists() {
               {counts.map((c) => (
                 <span key={c.k}><Icon name={c.ic} size={16} className={ST_COLOR[c.k]} />{c.l} <span className="mono">{c.n}</span></span>
               ))}
+              {rows.some((r) => inCrazyDays(r.item)) && <span><i className="sw10" style={{ background: 'var(--tape)', borderColor: 'var(--tape)' }} />Сумасшедшие дни <span className="mono">{rows.filter((r) => inCrazyDays(r.item)).length}</span></span>}
             </div>
           </div>
 
@@ -177,6 +182,7 @@ export function Lists() {
                         <button type="button" className="item" onClick={() => open(r.id)}>
                           <div className="label">{r.item.store}{type ? ' · ' + type : ''}</div>
                           <div style={{ marginTop: 2 }}>{r.item.brand && <b>{r.item.brand}</b>} {r.item.title}</div>
+                          <PromoTag promo={r.item.promo} />
                         </button>
                         <div className="lst">
                           <Icon name={r.status.icon} size={18} className={ST_COLOR[r.status.k]} />

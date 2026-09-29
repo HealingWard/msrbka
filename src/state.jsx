@@ -182,6 +182,7 @@ export function AppProvider({ children }) {
           }
           if (cur.item?.image) merged.image = cur.item.image;
           if (r.item.old == null) merged.old = null; // скидка закончилась
+          merged.promo = r.item.promo || null; // акция могла начаться или закончиться
           next[r.id] = { ...cur, item: merged, checkedAt: at, checkStatus: 'ok' };
         } else if (r.status === 'noprice') {
           next[r.id] = { ...cur, item: { ...cur.item, stock: 'Нет в наличии' }, checkedAt: at, checkStatus: 'noprice' };

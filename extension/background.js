@@ -123,6 +123,8 @@ function mergeDetails(item, d) {
     if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
   }
   if (!out.title && d.title) out.title = d.title;
+  // Акция с карточки важнее, чем её отсутствие в выдаче; но и «акции больше нет» с карточки — тоже правда.
+  if ('promo' in d) out.promo = d.promo;
   out.detailed = true;
   return out;
 }

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Отмерь — поиск в магазинах",
   "short_name": "Отмерь",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Ищет товары в Stockmann и Lamoda для сайта «Отмерь»: открывает выдачу и карточки товаров в вашем браузере и собирает цены, размеры, цвет и бренд.",
   "minimum_chrome_version": "116",
   "permissions": [

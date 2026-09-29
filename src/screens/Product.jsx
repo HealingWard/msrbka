@@ -10,7 +10,7 @@ import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing
 import { withCurrent } from '../lib/useHistories.js';
 import { PriceChart } from '../components/PriceChart.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { Chip, Photo, PriceChange, Tape } from '../components/ui.jsx';
+import { Chip, Photo, PriceChange, PromoTag, Tape } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const BACK = { results: 'К результатам', lists: 'К спискам', searches: 'К моим поискам' };
@@ -129,6 +129,7 @@ export function Product({ id, from }) {
             <span className="price">{v.priceStr}</span>
             {v.hasOld && <span className="old">{v.oldStr}</span>}
             <PriceChange badge={changeBadge(st90)} title="к обычной цене за 90 дней" />
+            <PromoTag promo={p.promo} />
           </div>
 
           <div className="spec">

@@ -54,6 +54,16 @@ export function PriceChange({ badge, small, title, children }) {
   );
 }
 
+/** Плашка акции магазина: «Сумасшедшие дни» Stockmann или другая плашка товара. */
+export function PromoTag({ promo }) {
+  if (!promo) return null;
+  const text = promo.crazy ? 'Сумасшедшие дни' : promo.badges?.[0];
+  if (!text) return null;
+  const extra = [promo.crazy && promo.crazyText, promo.crazy && promo.crazyDate && 'до ' + promo.crazyDate].filter(Boolean).join(' · ');
+  return <span className="promo" title={[text, extra, ...(promo.badges || [])].filter(Boolean).join(' · ')}>{text}{extra ? ' · ' + extra : ''}</span>;
+}
+export const inCrazyDays = (p) => !!p?.promo?.crazy;
+
 /** Лента-прогресс: жёлтая заливка с делениями, трек tape-soft, когда цель достигнута. */
 export function Tape({ value, done }) {
   return <div className={'tape' + (done ? ' done' : '')}><i style={{ width: Math.round(Math.max(0, Math.min(1, value)) * 100) + '%' }} /></div>;

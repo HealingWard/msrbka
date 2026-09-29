@@ -53,6 +53,7 @@ export function liveItem(raw) {
     sizes: raw.sizes || [], sizesOut: raw.sizesOut || [], color, stock: stockLabel(raw.inStock), kind: '', demo: false,
     detailed: !!raw.detailed,
     gender: normGender(raw.gender),
+    promo: raw.promo || null,
   };
 }
 
@@ -60,5 +61,5 @@ export function liveItem(raw) {
 export const snapshot = (p) => ({
   id: p.id, store: p.store, url: p.url, title: p.title, brand: p.brand, price: p.price, old: p.old,
   image: p.image, rating: p.rating, reviews: p.reviews, sizes: p.sizes, sizesOut: p.sizesOut, color: p.color, stock: p.stock, kind: p.kind,
-  demo: p.demo, detailed: p.detailed, gender: p.gender,
+  demo: p.demo, detailed: p.detailed, gender: p.gender, promo: p.promo || null,
 });
