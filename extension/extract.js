@@ -297,12 +297,17 @@
   // Акции Stockmann: «Сумасшедшие дни» (поля cdDay / cdDayDate / cdBadge / cdInfo / showCd — Crazy Days)
   // и прочие плашки товара (badge, badges, stateBadges, modeBadges, promotions).
   const badgeText = (b) => clean(typeof b === 'string' ? b : b && typeof b === 'object' ? String(b.text || b.name || b.title || b.label || b.value || '') : '');
+  // Участие конкретного товара — только его собственная дата «Сумасшедшего дня» (на фото: «сб | с 17 октября»)
+  // или его плашка. showCd, current_day_cd, cdInfo и счётчик cdDay заполнены у всех товаров — это общая акция,
+  // а не участие вещи (из-за них в 0.4.3 в акцию попадали все товары).
   function stockmannPromo(p) {
-    const crazy = !!(p.showCd || p.cdDay || p.current_day_cd || p.cdBadge || p.cdInfo);
-    const crazyText = badgeText(p.cdBadge) || badgeText(p.cdInfo) || '';
+    const crazyDate = clean(String(p.cdDayDate || ''));
+    const crazyText = badgeText(p.cdBadge);
+    const crazy = !!(crazyDate || crazyText);
     const badges = [...new Set([p.badge, ...[].concat(p.badges || [], p.stateBadges || [], p.modeBadges || [], p.promotions || [])].map(badgeText).filter(Boolean))].slice(0, 5);
-    if (!crazy && !badges.length) return null;
-    return { crazy, crazyText, crazyDay: +p.cdDay || +p.current_day_cd || 0, crazyDate: clean(String(p.cdDayDate || '')), badges };
+    const raw = { cdDay: p.cdDay ?? null, cdDayDate: p.cdDayDate ?? null, showCd: p.showCd ?? null, current_day_cd: p.current_day_cd ?? null, cdBadge: p.cdBadge ?? null, profit: p.profit ?? null };
+    if (!crazy && !badges.length) return { v: 2, crazy: false, badges: [], raw };
+    return { v: 2, crazy, crazyText, crazyDate, profit: +p.profit || 0, badges, raw };
   }
   function stockmannItem(p) {
     if (!p || !p.name) return null;

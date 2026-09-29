@@ -57,12 +57,32 @@ export function PriceChange({ badge, small, title, children }) {
 /** Плашка акции магазина: «Сумасшедшие дни» Stockmann или другая плашка товара. */
 export function PromoTag({ promo }) {
   if (!promo) return null;
-  const text = promo.crazy ? 'Сумасшедшие дни' : promo.badges?.[0];
+  const crazy = inCrazyDaysPromo(promo);
+  const text = crazy ? 'Сумасшедшие дни' : promo.badges?.[0];
   if (!text) return null;
-  const extra = [promo.crazy && promo.crazyText, promo.crazy && promo.crazyDate && 'до ' + promo.crazyDate].filter(Boolean).join(' · ');
-  return <span className="promo" title={[text, extra, ...(promo.badges || [])].filter(Boolean).join(' · ')}>{text}{extra ? ' · ' + extra : ''}</span>;
+  const date = crazy ? crazyDateLabel(promo.crazyDate) : '';
+  const extra = [date, crazy && promo.crazyText && promo.crazyText !== date ? promo.crazyText : ''].filter(Boolean).join(' · ');
+  const title = [text, extra, crazy && promo.profit ? 'выгода ' + promo.profit.toLocaleString('ru-RU') + ' ₽' : '', ...(promo.badges || [])].filter(Boolean).join(' · ');
+  return <span className="promo" title={title}>{text}{extra ? ' · ' + extra : ''}</span>;
 }
-export const inCrazyDays = (p) => !!p?.promo?.crazy;
+// Участие в «Сумасшедших днях» — только по данным расширения 0.4.4+ (v: 2): в 0.4.3 в акцию ошибочно попадали все товары.
+const inCrazyDaysPromo = (promo) => !!promo && promo.v >= 2 && !!promo.crazy;
+export const inCrazyDays = (p) => inCrazyDaysPromo(p?.promo);
+const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+/** «2026-10-17» / «17.10» / «17 октября» → «сб, с 17 октября». */
+function crazyDateLabel(s) {
+  if (!s) return '';
+  let d = null;
+  let m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
+  m = !d && String(s).match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?/);
+  if (m) d = new Date(m[3] ? +m[3] : new Date().getFullYear(), +m[2] - 1, +m[1]);
+  m = !d && String(s).match(/(\d{1,2})\s+([а-я]+)/i);
+  if (m && MONTHS_G.indexOf(m[2].toLowerCase()) >= 0) d = new Date(new Date().getFullYear(), MONTHS_G.indexOf(m[2].toLowerCase()), +m[1]);
+  if (!d || Number.isNaN(d.getTime())) return String(s);
+  return WD[d.getDay()] + ', с ' + d.getDate() + ' ' + MONTHS_G[d.getMonth()];
+}
 
 /** Лента-прогресс: жёлтая заливка с делениями, трек tape-soft, когда цель достигнута. */
 export function Tape({ value, done }) {

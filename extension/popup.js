@@ -11,3 +11,13 @@ btn.addEventListener('click', () => {
       + '\n\nГотово. Файлы — в «Загрузки/otmer».';
   });
 });
+
+const tabBtn = document.getElementById('tab');
+const out2 = document.getElementById('out2');
+tabBtn.addEventListener('click', () => {
+  tabBtn.disabled = true;
+  chrome.runtime.sendMessage({ type: 'dumpTab' }, (r) => {
+    tabBtn.disabled = false;
+    out2.textContent = r && r.ok ? 'Сохранено: «Загрузки/' + r.name + '».' : 'Ошибка: ' + (r?.error || chrome.runtime.lastError?.message || 'неизвестно');
+  });
+});
