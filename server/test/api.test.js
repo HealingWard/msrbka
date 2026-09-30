@@ -84,14 +84,20 @@ test('карточка товара и защита от чужих адресо
   });
 });
 
-test('история: одна точка в день', () => {
+test('история: за день — первая и последняя цена, если цена изменилась', () => {
   const h = new PriceHistory('/tmp/x.json');
   h.scheduleSave = () => {};
   const day = 86400000;
   h.record({ id: 'a', price: 100 }, 0);
+  h.record({ id: 'a', price: 100 }, 500);
   h.record({ id: 'a', price: 90 }, 1000);
+  h.record({ id: 'a', price: 85 }, 2000);
   h.record({ id: 'a', price: 80 }, day * 2);
-  assert.deepEqual(h.get('a'), [{ t: 1000, price: 90 }, { t: day * 2, price: 80 }]);
+  assert.deepEqual(h.get('a'), [{ t: 500, price: 100 }, { t: 2000, price: 85 }, { t: day * 2, price: 80 }]);
+  h.record({ id: 'b', price: 100 }, 0);
+  h.record({ id: 'b', price: 90 }, 1000);
+  h.record({ id: 'b', price: 100 }, 2000);
+  assert.deepEqual(h.get('b'), [{ t: 0, price: 100 }]);
 });
 
 test('POST /api/record: цены из расширения попадают в историю, чужие ссылки отбрасываются', async () => {

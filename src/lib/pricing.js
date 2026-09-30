@@ -41,6 +41,14 @@ export function priceStats(points, periodDays = 90, now = Date.now()) {
   };
 }
 
+/** Изменения цены по проверкам: первая проверка и каждая смена цены → [{ t, price }]. */
+export function priceSteps(points) {
+  const all = (points || []).filter((x) => x && x.price > 0).sort((a, b) => a.t - b.t);
+  const out = [];
+  for (const x of all) if (!out.length || out[out.length - 1].price !== x.price) out.push({ t: x.t, price: x.price });
+  return out;
+}
+
 /** Бейдж изменения цены: к обычной или «МИНИМУМ ЗА N ДНЕЙ». null — истории пока мало. */
 export function changeBadge(st, days = 90) {
   if (!st || !st.known) return null;

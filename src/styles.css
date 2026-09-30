@@ -545,6 +545,15 @@ main.main { flex: 1; }
 .since .drop { color: var(--drop); }
 .since .rise { color: var(--rise); }
 .hist-empty { padding: 32px 0 8px; color: var(--muted); font-size: 15px; line-height: 22px; max-width: 720px; }
+.hist.short .hist-stats { margin-bottom: 24px; }
+.hist.short .hist-empty { padding: 16px 0 0; }
+.hist.short .since { margin-left: 0; }
+.hist-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; max-width: 520px; }
+.hist-steps li { display: grid; grid-template-columns: 160px 120px auto; align-items: center; gap: 16px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.hist-steps li:last-child { border-bottom: none; }
+.hist-steps .d { color: var(--muted); }
+.hist-steps .sub { color: var(--muted); font-size: 13px; }
+.hist-steps .chg { justify-self: start; padding: 2px 6px; }
 
 /* ——— 5. списки и цели ——— */
 .lists-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 40px; margin-top: 40px; align-items: start; }
@@ -704,6 +713,7 @@ code { font-family: var(--mono); font-size: .9em; background: var(--paper); bord
   .chart { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: 220px 48px; }
   .chart-y div { right: 8px; font-size: 10px; }
   .sentence, .since { margin-left: 0; font-size: 16px; }
+  .hist-steps li { grid-template-columns: minmax(0, 1fr) 84px 108px; gap: 8px; }
   .spec { grid-template-columns: 88px 1fr; }
   .saved-item { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .mdl-back { padding: 0; }

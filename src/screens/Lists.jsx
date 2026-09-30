@@ -4,7 +4,7 @@ import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
 import { detectTypes } from '../lib/search.js';
 import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
-import { useHistories } from '../lib/useHistories.js';
+import { useHistories, withAdded } from '../lib/useHistories.js';
 import { recheckFavorites } from '../lib/source.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
@@ -35,7 +35,7 @@ export function Lists() {
 
   const all = entries.map(({ id, fv, item }) => {
     const checkedAt = fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined;
-    const pts = hist(item, checkedAt);
+    const pts = withAdded(hist(item, checkedAt), fv);
     const st = priceStats(pts, 90);
     const cur = item.price;
     const addedAt = new Date(fv.addedAt).getTime();

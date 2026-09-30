@@ -7,7 +7,7 @@ import { productView } from '../lib/product.js';
 import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
 import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing.js';
-import { withCurrent } from '../lib/useHistories.js';
+import { withAdded, withCurrent } from '../lib/useHistories.js';
 import { PriceChart } from '../components/PriceChart.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { Chip, Photo, PriceChange, PromoTag, Tape } from '../components/ui.jsx';
@@ -62,7 +62,7 @@ export function Product({ id, from }) {
   const target = fav?.target || null;
   const want = showMatch ? run.crit.size : null;
   const checkedIso = details.checkedAt || fav?.checkedAt || run?.at;
-  const points = withCurrent(details.history, p.price, Date.now());
+  const points = withAdded(withCurrent(details.history, p.price, Date.now()), app.favs[p.id]);
   const st90 = priceStats(points, 90);
   const images = p.images && p.images.length ? p.images : p.image ? [p.image] : [];
   const sizeList = p.demo

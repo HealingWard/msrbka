@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { dateLong, dateShort, fmt, rub } from '../lib/format.js';
+import { dateLong, dateShort, fmt, plural, rub } from '../lib/format.js';
 import { niceStep } from '../lib/priceHistory.js';
-import { deltaBadge, priceStats } from '../lib/pricing.js';
+import { changePct, deltaBadge, priceStats, priceSteps } from '../lib/pricing.js';
 import { PriceChange, Segmented } from './ui.jsx';
 
 const PERIODS = [[30, '30 дней'], [90, '90 дней'], [180, '180 дней']];
+const DAY = 86400000;
+const DAYS_F = ['день', 'дня', 'дней'];
+const timeStr = (t) => new Date(t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 
 /** История цены: статистика, коридор обычной цены, минимум, текущая точка, цель, подсказка при наведении. */
 export function PriceChart({ p, points, loading, target, children }) {
@@ -18,13 +21,7 @@ export function PriceChart({ p, points, loading, target, children }) {
   if (loading && !st) {
     body = <div className="hist-empty">Загружаю историю цены…</div>;
   } else if (!ready) {
-    body = (
-      <div className="hist-empty">
-        {st
-          ? <>История цены копится: первая проверка — {dateLong(st.first)}, цена {rub(st.cur)}. Цена записывается при каждом поиске и проверке. Через неделю наблюдений здесь появятся обычная цена, минимум и график.</>
-          : <>Пока нет ни одной проверки цены этой вещи.</>}
-      </div>
-    );
+    body = st ? <ShortHistory points={points} st={st} now={now} /> : <div className="hist-empty">Пока нет ни одной проверки цены этой вещи.</div>;
   } else {
     const n = st.v.length;
     const vmax = Math.max(...st.v);
@@ -119,7 +116,7 @@ export function PriceChart({ p, points, loading, target, children }) {
   }
 
   return (
-    <section className="hist" aria-labelledby="hist-h">
+    <section className={'hist' + (ready ? '' : ' short')} aria-labelledby="hist-h">
       <div className="hist-head">
         <div>
           <h2 className="h2" id="hist-h">История цены</h2>
@@ -130,5 +127,57 @@ export function PriceChart({ p, points, loading, target, children }) {
       {body}
       {children}
     </section>
+  );
+}
+
+/**
+ * Первая неделя наблюдений: для «обычной цены» и графика данных мало, но все проверки и изменения цены
+ * уже показываем — первая цена, текущая, минимум и список изменений.
+ */
+function ShortHistory({ points, st, now }) {
+  const steps = priceSteps(points);
+  const first = steps[0];
+  const dl = changePct(st.cur, first.price);
+  const mn = Math.min(...steps.map((x) => x.price));
+  const minAt = steps.filter((x) => x.price === mn).pop().t;
+  const left = Math.max(1, 7 - Math.floor((now - first.t) / DAY));
+  return (
+    <>
+      <div className="hist-stats">
+        <div>
+          <div className="label">Первая проверка</div>
+          <div className="v">{rub(first.price)}</div>
+          <div className="sn">{dateLong(first.t)}</div>
+        </div>
+        <div>
+          <div className="label">Сейчас</div>
+          <div className="v">{rub(st.cur)}</div>
+          <div className="sn">{dl !== 0 && <PriceChange small badge={deltaBadge(dl)} />}{dl !== 0 ? 'к первой проверке' : 'цена не менялась'}</div>
+        </div>
+        <div>
+          <div className="label">Минимум</div>
+          <div className="v">{rub(mn)}</div>
+          <div className="sn">{mn === st.cur ? 'текущая цена — минимальная' : dateLong(minAt)}</div>
+        </div>
+      </div>
+      {steps.length > 1 && (
+        <ol className="hist-steps" aria-label="Изменения цены">
+          {steps.slice(-8).map((x, i, a) => {
+            const d = i ? changePct(x.price, a[i - 1].price) : 0;
+            return (
+              <li key={x.t}>
+                <span className="d">{dateLong(x.t)}{a.some((y) => y !== x && dateLong(y.t) === dateLong(x.t)) ? ', ' + timeStr(x.t) : ''}</span>
+                <span className="mono">{rub(x.price)}</span>
+                {i > 0 ? <PriceChange small badge={deltaBadge(d)} /> : <span className="sub">первая проверка</span>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      <p className="hist-empty">
+        Цена записывается при каждом поиске и проверке. Обычная цена, коридор и график появятся после недели наблюдений —
+        через {left} {plural(left, DAYS_F)}.
+      </p>
+    </>
   );
 }

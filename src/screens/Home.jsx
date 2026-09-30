@@ -5,7 +5,7 @@ import { navigate } from '../lib/router.js';
 import { detectTypes } from '../lib/search.js';
 import { priceAt } from '../lib/history.js';
 import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
-import { useHistories } from '../lib/useHistories.js';
+import { useHistories, withAdded } from '../lib/useHistories.js';
 import { startSearch } from '../lib/startSearch.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID, DEMO_ITEMS } from '../lib/items.js';
@@ -24,7 +24,7 @@ function useFollowRows(app) {
     .filter((x) => x.item), [app.favs]);
   const hist = useHistories(entries.map((x) => x.item));
   return entries.map(({ id, fv, item }) => {
-    const pts = hist(item, fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined);
+    const pts = withAdded(hist(item, fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined), fv);
     const st = priceStats(pts, 90);
     const cur = item.price;
     const was = fv.priceAtAdd || priceAt(pts, new Date(fv.addedAt).getTime()) || cur;
