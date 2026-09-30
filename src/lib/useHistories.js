@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { priceAt } from './history.js';
 import { fetchHistories } from './source.js';
 
 /**
@@ -27,4 +28,16 @@ export function withCurrent(points, price, at = Date.now()) {
   const last = all[all.length - 1];
   if (!last || (last.price !== price && at >= last.t)) all.push({ t: Math.max(at, last ? last.t : 0), price });
   return all;
+}
+
+/**
+ * Цена при добавлении в списки — тоже проверка. Если в истории на сервере её нет (например, её затёрла
+ * цена со страницы товара, открытой в тот же день), добавляем её точкой в момент добавления.
+ */
+export function withAdded(points, fv) {
+  const all = points || [];
+  if (!fv || !(fv.priceAtAdd > 0) || !fv.addedAt) return all;
+  const t = new Date(fv.addedAt).getTime();
+  if (!Number.isFinite(t) || priceAt(all, t) === fv.priceAtAdd) return all;
+  return [...all, { t, price: fv.priceAtAdd }].sort((a, b) => a.t - b.t);
 }

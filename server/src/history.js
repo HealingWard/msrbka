@@ -1,5 +1,6 @@
 // История цен: сервер записывает цену товара при каждой проверке (поиск или открытие карточки).
-// Хранится в JSON-файле; одна точка на товар в день (последняя цена дня).
+// Хранится в JSON-файле; в день не больше двух точек на товар: первая цена дня и последняя, если цена
+// за день изменилась (иначе цена из поиска затиралась ценой со страницы товара, открытой в тот же день).
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -34,8 +35,14 @@ export class PriceHistory {
     rec.old = item.old || null;
     const pts = rec.points;
     const last = pts[pts.length - 1];
-    if (last && dayOf(last[0]) === dayOf(t)) { last[0] = t; last[1] = item.price; }
-    else pts.push([t, item.price]);
+    const prev = pts[pts.length - 2];
+    const sameDay = last && dayOf(last[0]) === dayOf(t);
+    if (sameDay && last[1] === item.price) last[0] = t;
+    else if (sameDay && prev && dayOf(prev[0]) === dayOf(t)) {
+      // Вторая точка дня — последняя цена дня; вернулась к первой цене дня — изменения за день не было.
+      if (prev[1] === item.price) pts.pop();
+      else { last[0] = t; last[1] = item.price; }
+    } else pts.push([t, item.price]);
     if (pts.length > MAX_POINTS) pts.splice(0, pts.length - MAX_POINTS);
     this.scheduleSave();
   }
