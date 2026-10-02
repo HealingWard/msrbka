@@ -582,7 +582,9 @@ main.main { flex: 1; }
 .st-counts .stc:hover { border-color: var(--line); color: var(--ink); }
 .st-counts .stc:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .st-counts .stc.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-.st-counts .stc.on .mono, .st-counts .stc.on .icon { color: var(--paper); }
+.st-counts .stc.on .mono, .st-counts .stc.on .icon, .st-counts .stc.on .ar { color: var(--paper); }
+.st-counts .ar { font-family: var(--mono); font-weight: 600; }
+.st-counts .stc-sep { width: 1px; height: 20px; background: var(--line); align-self: center; margin: 0 4px; }
 .st-counts .mono { color: var(--ink); }
 .c-drop { color: var(--drop); }
 .c-rise { color: var(--rise); }
