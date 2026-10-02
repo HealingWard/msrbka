@@ -577,7 +577,12 @@ main.main { flex: 1; }
 .list-main { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .list-top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .st-counts { display: flex; gap: 16px; font-size: 13px; font-weight: 500; color: var(--muted); flex-wrap: wrap; }
-.st-counts span { display: flex; align-items: center; gap: 6px; }
+.st-counts { gap: 4px 8px; }
+.st-counts .stc { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.st-counts .stc:hover { border-color: var(--line); color: var(--ink); }
+.st-counts .stc:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.st-counts .stc.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.st-counts .stc.on .mono, .st-counts .stc.on .icon { color: var(--paper); }
 .st-counts .mono { color: var(--ink); }
 .c-drop { color: var(--drop); }
 .c-rise { color: var(--rise); }
