@@ -80,6 +80,15 @@ export function Lists() {
   const sTg = rows.reduce((x, r) => x + (r.tg && r.cur > r.tg ? r.tg : r.cur), 0);
   const dlt = sCur - sWas;
   const unassigned = all.filter((r) => !r.list).length;
+  // Строка про автопроверку цен расширением.
+  const ai = app.autoInfo;
+  const lastChecked = Math.max(ai?.auto?.lastRun || 0, ...all.map((r) => (r.fv.checkedAt ? new Date(r.fv.checkedAt).getTime() : 0)));
+  const autoLine = !ai || !all.length ? null
+    : ai.status === 'old' ? <>Цены могут проверяться сами, раз в день: <a href="#/extension">обновите расширение</a> до версии 0.5.</>
+      : ai.status !== 'ok' ? null
+        : ai.auto?.running ? 'Идёт автопроверка цен — в свёрнутом окне Chrome, 5–10 секунд на вещь.'
+          : !ai.auto?.enabled ? 'Автопроверка цен выключена — включить можно в окне расширения «Отмерь».'
+            : 'Цены проверяются сами раз в день, пока открыт Chrome' + (lastChecked ? ' · последняя проверка ' + whenStr(new Date(lastChecked).toISOString()) : '') + '.';
 
   const create = () => {
     const nm = (newName || '').trim();
@@ -155,6 +164,7 @@ export function Lists() {
         <div>
           <h1 className="h1">Списки и цели</h1>
           <p>{all.length} {plural(all.length, THINGS)} в {colls.length} {plural(colls.length, ['списке', 'списках', 'списках'])}. {down} подешевели с момента добавления.</p>
+          {autoLine && <p className="auto-line small">{autoLine}</p>}
         </div>
         {isLive() && all.length > 0 && (
           <button type="button" className="btn btn-secondary" disabled={!!check?.busy} onClick={runCheck}>

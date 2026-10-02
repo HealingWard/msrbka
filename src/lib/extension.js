@@ -43,3 +43,11 @@ export const extSearch = (store, query, opts = {}) => request({ pricel: 'search'
 export const extDetails = (url, opts) => request({ pricel: 'details', url }, { ...opts, timeoutMs: 90000 });
 export const extBrands = (store, opts = {}) => request({ pricel: 'brands', store, force: !!opts.force }, { ...opts, timeoutMs: 4 * 60000 });
 export const extRecheck = (urls, opts = {}) => request({ pricel: 'recheck', urls }, { ...opts, timeoutMs: Math.max(3, urls.length) * 60000 });
+export const extWatch = (payload) => request({ pricel: 'watch', ...payload }, { timeoutMs: 8000 });
+
+/** Версия расширения не ниже нужной: «0.5.0» ≥ «0.4.4». */
+export function versionAtLeast(v, need) {
+  const a = String(v || '0').split('.').map(Number), b = String(need).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  return true;
+}

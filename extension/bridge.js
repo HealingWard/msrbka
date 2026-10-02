@@ -1,5 +1,5 @@
 // Мост между страницей «Отмерь» и расширением.
-// Страница шлёт window.postMessage({ pricel: 'hello' | 'search' | 'details' | 'brands' | 'recheck', id, ... }),
+// Страница шлёт window.postMessage({ pricel: 'hello' | 'search' | 'details' | 'brands' | 'recheck' | 'watch', id, ... }),
 // мост пересылает в фоновый скрипт и возвращает ответы/прогресс тем же способом.
 (() => {
   const VERSION = chrome.runtime.getManifest().version;
@@ -10,6 +10,18 @@
     const m = e.data;
     if (!m || typeof m !== 'object' || m.pricelExt || typeof m.pricel !== 'string') return;
     if (m.pricel === 'hello') { reply({ pricel: 'ready', version: VERSION }); return; }
+    // Список вещей для автопроверки цен; в ответ — проверки, которые сайт ещё не забрал.
+    if (m.pricel === 'watch') {
+      try {
+        chrome.runtime.sendMessage({ type: 'watch', items: m.items, site: m.site, api: m.api, applied: m.applied, lastManual: m.lastManual }, (r) => {
+          if (chrome.runtime.lastError || !r) reply({ pricel: 'error', id: m.id, error: 'расширение не ответило' });
+          else reply({ ...r, pricel: 'result', id: m.id });
+        });
+      } catch {
+        reply({ pricel: 'error', id: m.id, error: 'расширение обновилось — перезагрузите страницу' });
+      }
+      return;
+    }
     if (!['search', 'details', 'brands', 'recheck'].includes(m.pricel)) return;
     let port;
     try {

@@ -1,7 +1,8 @@
 // Откуда берутся товары: сервер поиска (живой режим) или демо-каталог.
 
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
-import { extDetails, extRecheck, extSearch, extensionVersion } from './extension.js';
+import { extDetails, extRecheck, extSearch, extWatch, extensionVersion, versionAtLeast } from './extension.js';
+import { isSoldOut } from './product.js';
 import { BED_SIZE, CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
@@ -213,14 +214,44 @@ export async function recheckFavorites(items, onProgress) {
   } catch (e) {
     return { status: 'error', results: [], error: e.message };
   }
-  const results = (r.items || []).map((x) => {
+  const results = recheckResults(r.items, byUrl);
+  recordPrices(results.filter((x) => x.status === 'ok' && x.item && x.item.price).map((x) => x.item));
+  return { status: r.status === 'error' && !results.length ? 'error' : 'ok', results, error: r.error };
+}
+
+/** Ответ расширения о проверке цен → [{ id, status, item }] для вещей из избранного (byUrl: url → вещь). */
+function recheckResults(raw, byUrl) {
+  return (raw || []).map((x) => {
     const fav = byUrl.get(x.url);
     if (!fav) return null;
     const item = x.item ? liveItem({ ...x.item, store: fav.store, id: fav.id, url: fav.url }) : null;
     return { id: fav.id, status: x.status, item };
   }).filter(Boolean);
-  recordPrices(results.filter((x) => x.status === 'ok' && x.item && x.item.price).map((x) => x.item));
-  return { status: r.status === 'error' && !results.length ? 'error' : 'ok', results, error: r.error };
+}
+
+export const AUTO_MIN_VERSION = '0.5.0';
+
+/**
+ * Автопроверка цен: сообщает расширению, за какими вещами вы следите, и забирает проверки, сделанные без вас.
+ * favs — избранное, applied — время последней уже применённой проверки.
+ * → { status: 'ok'|'noext'|'old'|'none', auto, runs: [{ at, results: [{ id, status, item }], news }] }
+ */
+export async function syncAutoCheck(favs, applied) {
+  if (!isLive()) return { status: 'none', runs: [] };
+  const v = await extensionVersion();
+  if (!v) return { status: 'noext', runs: [] };
+  if (!versionAtLeast(v, AUTO_MIN_VERSION)) return { status: 'old', version: v, runs: [] };
+  const list = Object.entries(favs)
+    .map(([id, fv]) => ({ id, fv, item: fv.item }))
+    .filter((x) => x.item && !x.item.demo && x.item.url && storeByName(x.item.store)?.ext);
+  const byUrl = new Map(list.map((x) => [x.item.url, { ...x.item, id: x.id }]));
+  const lastManual = Math.max(0, ...list.map((x) => (x.fv.checkedAt ? new Date(x.fv.checkedAt).getTime() : 0)));
+  const r = await extWatch({
+    items: list.map(({ id, fv, item }) => ({ id, url: item.url, title: item.title, brand: item.brand, price: item.price, target: fv.target || null, soldOut: isSoldOut(item, fv) })),
+    site: window.location.origin + window.location.pathname, api: apiUrl(), applied: applied || 0, lastManual,
+  });
+  const runs = (r.runs || []).map((run) => ({ at: run.at, news: run.news || {}, results: recheckResults(run.results, byUrl) }));
+  return { status: 'ok', auto: r.auto || null, runs };
 }
 
 export async function fetchHistories(items, signal) {
