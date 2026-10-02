@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { dateShort, plural, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
@@ -13,6 +13,7 @@ import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
+import { usePersistentState } from '../lib/storage.js';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
 const ST_COLOR = { pora: 'c-drop', wait: 'c-muted', high: 'c-rise', out: 'c-rise' };
@@ -20,9 +21,11 @@ const ST_COLOR = { pora: 'c-drop', wait: 'c-muted', high: 'c-rise', out: 'c-rise
 export function Lists() {
   const app = useApp();
   const { colls } = app;
-  const [active, setActive] = useState('all');
-  const [priceF, setPriceF] = useState('all'); // all | down | up — изменение цены с момента добавления
-  const [statusF, setStatusF] = useState(''); // '' | pora | wait | high | out | crazy — клик по счётчику статуса
+  // Выбранный список и фильтры живут в сессии вкладки: вернулись со страницы вещи — всё как было.
+  const [active, setActive] = usePersistentState('listsActive', 'all', 'session');
+  const [priceF, setPriceF] = usePersistentState('listsPrice', 'all', 'session'); // all | down | up — изменение цены с момента добавления
+  const [statusF, setStatusF] = usePersistentState('listsStatus', '', 'session'); // '' | pora | wait | high | out | crazy — клик по счётчику статуса
+  const [lastOpen, setLastOpen] = usePersistentState('listsLastOpen', null, 'session');
   const [newName, setNewName] = useState(null);
   const [check, setCheck] = useState(null); // { busy, text, summary, error }
   const [exportOpen, setExportOpen] = useState(false);
@@ -83,7 +86,20 @@ export function Lists() {
     setNewName(null);
     if (nm) setActive(app.addColl(nm));
   };
-  const open = (id) => navigate('/product/' + encodeURIComponent(id) + '?from=lists');
+  const open = (id) => { setLastOpen(id); navigate('/product/' + encodeURIComponent(id) + '?from=lists'); };
+  // Вернулись со страницы вещи — прокручиваем к ней и коротко подсвечиваем.
+  const backTo = useRef(lastOpen);
+  useEffect(() => {
+    const id = backTo.current;
+    if (!id) return;
+    backTo.current = null;
+    setLastOpen(null);
+    const el = document.querySelector('[data-row="' + CSS.escape(id) + '"]');
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('back');
+    setTimeout(() => el.classList.remove('back'), 1600);
+  }, [setLastOpen]);
 
   const runCheck = async () => {
     const before = Object.fromEntries(all.map((r) => [r.id, r.cur]));
@@ -201,7 +217,7 @@ export function Lists() {
                   {rows.map((r) => {
                     const type = r.item.kind || detectTypes(r.item.title)[0] || '';
                     return (
-                      <div key={r.id} className={'lrow' + (r.soldOut ? ' out' : '')}>
+                      <div key={r.id} data-row={r.id} className={'lrow' + (r.soldOut ? ' out' : '')}>
                         <button type="button" className="tph" onClick={() => open(r.id)} aria-label={'Открыть ' + r.item.title}>
                           {r.item.image && <img src={r.item.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} />}
                         </button>
