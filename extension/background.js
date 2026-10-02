@@ -81,11 +81,13 @@ async function waitHuman(tabId, timeoutMs = 180000) {
 }
 
 /** Открывает url во вкладке окна и разбирает. Если магазин показывает проверку — просит пользователя её пройти. */
-async function visit(windowId, url, mode, opts, onNeedHuman) {
+async function visit(windowId, url, mode, opts, onNeedHuman, quiet = false) {
   const tab = await chrome.tabs.create({ windowId, url, active: false });
   try {
     await waitLoaded(tab.id);
     let r = await extract(tab.id, mode, opts);
+    // Автопроверка (quiet) не разворачивает окно посреди вашей работы: проверку «не робот» просто пропускаем.
+    if (r && (r.blocked === 'captcha' || r.blocked === 'challenge') && quiet) return { blocked: r.blocked };
     if (r && (r.blocked === 'captcha' || r.blocked === 'challenge')) {
       // Показываем вкладку человеку и ждём, пока проверка будет пройдена.
       onNeedHuman?.();
@@ -227,21 +229,28 @@ async function detailsJob(url, send) {
   }
 }
 
-/** Свежие цены товаров из избранного: открывает карточки по очереди в одном свёрнутом окне, без кэша. */
-async function recheckJob(urls, send) {
-  const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, 100);
+/**
+ * Свежие цены товаров из избранного: открывает карточки по очереди в одном свёрнутом окне, без кэша.
+ * auto — автопроверка: без проверки «не робот» (магазин, который дважды её показал, пропускаем до следующего раза)
+ * и без кэша карточек (в нём фото, а хранилище расширения не резиновое).
+ */
+async function recheckJob(urls, send, auto = false) {
+  const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, auto ? 300 : 100);
   if (!list.length) return send({ pricel: 'result', status: 'empty', items: [] });
   const win = await openWindow();
   const out = [];
+  const blockedBy = {};
   try {
     for (let i = 0; i < list.length; i++) {
       const url = list[i];
       const [storeId, s] = storeForUrl(url);
       send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length });
+      if (auto && blockedBy[storeId] >= 2) { out.push({ url, status: 'blocked' }); continue; }
       let r = null;
-      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { r = null; }
+      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' }), auto); } catch { r = null; }
+      if (r && r.blocked) blockedBy[storeId] = (blockedBy[storeId] || 0) + 1;
       if (r && r.item && r.item.price) {
-        await saveDetails(url, r.item);
+        if (!auto) await saveDetails(url, r.item);
         out.push({ url, status: 'ok', item: { ...r.item, url, store: s.name, storeId } });
       } else if (r && r.item) {
         // Карточка открылась, но цены нет — обычно товар распродан или снят с продажи.
@@ -289,6 +298,141 @@ async function brandsJob(storeId, force, send) {
   } finally {
     await closeWindow(win);
   }
+}
+
+// ——— автопроверка цен избранного ———
+// Сайт сообщает расширению список вещей, за которыми вы следите (сообщение watch). Раз в день, пока открыт Chrome,
+// расширение само открывает их карточки в свёрнутом окне, отправляет цены на сервер истории и, если что-то
+// подешевело, дошло до цели или вернулось в продажу, показывает уведомление. Сайт забирает результаты при открытии.
+
+const AUTO_KEY = 'auto';
+const AUTO_EVERY = 24 * 3600e3;
+const AUTO_RUNS = 14; // сколько последних проверок храним, пока сайт их не забрал
+let autoBusy = false;
+
+async function autoState() {
+  const st = (await chrome.storage.local.get(AUTO_KEY))[AUTO_KEY] || {};
+  return { enabled: true, items: [], runs: [], ...st };
+}
+async function saveAuto(patch) {
+  const st = await autoState();
+  await chrome.storage.local.set({ [AUTO_KEY]: { ...st, ...patch } });
+}
+const lastCheck = (st) => Math.max(st.lastRun || 0, st.lastManual || 0);
+
+// Без фото: в результатах хватает цены, наличия и размеров; фото на сайте уже есть.
+function slim(item) {
+  if (!item) return item;
+  const { images, image, ...rest } = item;
+  return { ...rest, image: typeof image === 'string' && !image.startsWith('data:') ? image : null };
+}
+
+/** Убирает устаревшие карточки из кэша, чтобы хранилище не переполнялось фотографиями. */
+async function purgeDetails() {
+  const all = await chrome.storage.local.get(null);
+  const old = Object.keys(all).filter((k) => k.startsWith('d2:') && !(all[k] && Date.now() - all[k].t < DETAILS_TTL));
+  if (old.length) await chrome.storage.local.remove(old);
+}
+
+async function recordPrices(api, results, byUrl) {
+  if (!api) return;
+  const items = results.filter((x) => x.status === 'ok' && x.item && x.item.price && byUrl[x.url])
+    .map((x) => ({ id: byUrl[x.url].id, url: x.url, title: byUrl[x.url].title || x.item.title, store: x.item.store, price: x.item.price, old: x.item.old || null }));
+  if (!items.length) return;
+  try { await fetch(api + '/api/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }); } catch { /* сайт запишет сам */ }
+}
+
+const rub = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+const nameOf = (w) => ((w.brand ? w.brand + ' ' : '') + (w.title || '')).trim().slice(0, 60);
+
+/** Что сообщить после проверки: подешевели, дошли до цели, вернулись в продажу. */
+function autoNews(results, byUrl) {
+  const goal = [], down = [], back = [];
+  for (const x of results) {
+    const w = byUrl[x.url];
+    if (!w || x.status !== 'ok' || !x.item?.price) continue;
+    const p = x.item.price;
+    if (w.soldOut) back.push(w);
+    else if (w.target && p <= w.target && !(w.price <= w.target)) goal.push({ w, p });
+    else if (w.price && p < w.price) down.push({ w, p, d: Math.round((1 - p / w.price) * 100) });
+  }
+  const lines = [
+    ...goal.map(({ w, p }) => 'Цель достигнута: ' + nameOf(w) + ' — ' + rub(p)),
+    ...down.map(({ w, p, d }) => nameOf(w) + ' — ' + rub(p) + (d ? ' (−' + d + ' %)' : '')),
+    ...back.map((w) => 'Снова в продаже: ' + nameOf(w)),
+  ];
+  return { count: goal.length + down.length + back.length, goal: goal.length, down: down.length, back: back.length, lines };
+}
+
+async function autoRun(force = false) {
+  if (autoBusy) return { status: 'busy' };
+  const st = await autoState();
+  if (!st.items.length) return { status: 'empty' };
+  if (!force && (!st.enabled || Date.now() - lastCheck(st) < AUTO_EVERY)) return { status: 'skip' };
+  autoBusy = true;
+  await saveAuto({ running: Date.now() });
+  try {
+    await purgeDetails().catch(() => {});
+    const byUrl = Object.fromEntries(st.items.map((w) => [w.url, w]));
+    const r = await new Promise((resolve) => recheckJob(st.items.map((w) => w.url), (m) => { if (m.pricel === 'result') resolve(m); }, true));
+    const results = (r.items || []).map((x) => ({ ...x, item: slim(x.item) }));
+    const at = Date.now();
+    await recordPrices(st.api, results, byUrl);
+    const news = autoNews(results, byUrl);
+    // Следующее сравнение — с только что увиденными ценами.
+    const fresh = await autoState();
+    const seen = Object.fromEntries(results.filter((x) => x.status === 'ok' || x.status === 'noprice').map((x) => [x.url, x]));
+    const items = fresh.items.map((w) => (seen[w.url] ? { ...w, price: seen[w.url].item?.price || w.price, soldOut: seen[w.url].status === 'noprice' } : w));
+    const ok = results.filter((x) => x.status === 'ok').length;
+    const run = { at, results, news: { count: news.count, goal: news.goal, down: news.down, back: news.back }, ok, total: results.length };
+    await saveAuto({ items, lastRun: at, running: null, runs: [...(fresh.runs || []), run].slice(-AUTO_RUNS), lastSummary: { at, ...run.news, ok, total: results.length } });
+    if (news.count) {
+      chrome.notifications.create('otmer-auto', {
+        type: 'basic', iconUrl: 'icon.png', priority: 1,
+        title: 'Отмерь: ' + (news.goal ? 'пора покупать' : news.down ? 'подешевело' : 'снова в продаже'),
+        message: news.lines.slice(0, 3).join('\n') + (news.lines.length > 3 ? '\nи ещё ' + (news.lines.length - 3) : ''),
+      });
+    }
+    return { status: 'ok', run };
+  } catch (e) {
+    await saveAuto({ running: null });
+    return { status: 'error', error: String(e.message || e) };
+  } finally {
+    autoBusy = false;
+  }
+}
+
+chrome.notifications.onClicked.addListener(async (id) => {
+  if (id !== 'otmer-auto') return;
+  const st = await autoState();
+  chrome.tabs.create({ url: (st.site || 'https://healingward.github.io/msrbka/') + '#/lists' });
+  chrome.notifications.clear(id);
+});
+
+// Будильник раз в час: если с последней проверки прошли сутки — проверяем. Так проверка случится и после того,
+// как компьютер был выключен (Chrome не умеет будить сам себя).
+function ensureAlarm() {
+  chrome.alarms.get('otmer-auto', (a) => { if (!a) chrome.alarms.create('otmer-auto', { delayInMinutes: 2, periodInMinutes: 60 }); });
+}
+chrome.runtime.onInstalled.addListener(ensureAlarm);
+chrome.runtime.onStartup.addListener(ensureAlarm);
+ensureAlarm();
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'otmer-auto') autoRun(false); });
+
+/** Сообщение сайта: список вещей для автопроверки. В ответ — проверки, которые сайт ещё не забрал. */
+async function autoWatch(m) {
+  const items = (Array.isArray(m.items) ? m.items : []).filter((w) => w && typeof w.url === 'string' && storeForUrl(w.url)).slice(0, 300)
+    .map((w) => ({ id: String(w.id || ''), url: w.url, title: String(w.title || '').slice(0, 120), brand: String(w.brand || '').slice(0, 60),
+      price: +w.price || 0, target: +w.target || null, soldOut: !!w.soldOut }));
+  const st = await autoState();
+  // Цены, которые уже видело расширение, новее цен сайта, пока сайт не забрал проверку.
+  const prev = Object.fromEntries(st.items.map((w) => [w.url, w]));
+  const applied = +m.applied || 0;
+  const merged = items.map((w) => (prev[w.url] && (st.lastRun || 0) > applied ? { ...w, price: prev[w.url].price, soldOut: prev[w.url].soldOut } : w));
+  const runs = (st.runs || []).filter((r) => r.at > applied);
+  await saveAuto({ items: merged, site: typeof m.site === 'string' ? m.site : st.site, api: typeof m.api === 'string' ? m.api : st.api,
+    lastManual: Math.max(st.lastManual || 0, +m.lastManual || 0), runs });
+  return { status: 'ok', runs, auto: { enabled: st.enabled, lastRun: st.lastRun || null, running: st.running || null, every: AUTO_EVERY } };
 }
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -356,6 +500,23 @@ async function dumpActiveTab() {
 }
 
 chrome.runtime.onMessage.addListener((m, _sender, sendResponse) => {
+  if (m && m.type === 'watch') {
+    autoWatch(m).then(sendResponse, (e) => sendResponse({ status: 'error', error: String(e.message || e) }));
+    return true;
+  }
+  if (m && m.type === 'autoStatus') {
+    autoState().then((st) => sendResponse({ enabled: st.enabled, count: st.items.length, lastRun: st.lastRun || null, lastManual: st.lastManual || null,
+      running: autoBusy ? st.running : null, last: st.lastSummary || null, site: st.site }));
+    return true;
+  }
+  if (m && m.type === 'autoNow') {
+    autoRun(true).then(sendResponse);
+    return true;
+  }
+  if (m && m.type === 'autoToggle') {
+    saveAuto({ enabled: !!m.enabled }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (m && m.type === 'dumpTab') {
     dumpActiveTab().then((name) => sendResponse({ ok: true, name }), (e) => sendResponse({ ok: false, error: String(e.message || e) }));
     return true;

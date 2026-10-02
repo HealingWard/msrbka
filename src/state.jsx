@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { STORE_NAMES } from './data/catalog.js';
 import { usePersistentState } from './lib/storage.js';
 import { navigate } from './lib/router.js';
@@ -7,6 +7,7 @@ import { isLive } from './lib/config.js';
 import { DEMO_BY_ID, snapshot } from './lib/items.js';
 import { addKnownBrands } from './data/catalog.js';
 import { extBrands, extensionVersion } from './lib/extension.js';
+import { syncAutoCheck } from './lib/source.js';
 
 const DAY = 86400000;
 const ago = (days, h = 12, m = 0) => {
@@ -167,13 +168,15 @@ export function AppProvider({ children }) {
   }, [setFavs]);
 
   /** Результат проверки цен: новый снимок товара и время проверки. Фото оставляем прежнее (оно уже сохранено). */
-  const applyRecheck = useCallback((results) => {
-    const at = new Date().toISOString();
+  const applyRecheck = useCallback((results, when) => {
+    const at = new Date(when || Date.now()).toISOString();
     setFavs((f) => {
       const next = { ...f };
       for (const r of results) {
         const cur = next[r.id];
         if (!cur) continue;
+        // Автопроверка могла пролежать в расширении — более свежую проверку не затираем.
+        if (when && cur.checkedAt && new Date(cur.checkedAt) > new Date(at)) continue;
         if (r.status === 'ok' && r.item) {
           // Пустые поля карточки (бренд, цвет…) не затирают сохранённые.
           const merged = { ...(cur.item || {}) };
@@ -197,6 +200,30 @@ export function AppProvider({ children }) {
     });
   }, [setFavs]);
 
+  // Автопроверка цен: расширение (0.5+) раз в день само проверяет вещи из списков. Сообщаем ему список,
+  // забираем проверки, сделанные без нас, и применяем их как обычную проверку цен.
+  const [autoInfo, setAutoInfo] = useState(null); // { status, auto: { enabled, lastRun, running } }
+  const appliedRef = useRef(prefs.autoApplied || 0);
+  useEffect(() => {
+    if (!isLive()) return undefined;
+    let stop = false;
+    const t = setTimeout(() => {
+      syncAutoCheck(favs, appliedRef.current).then((r) => {
+        if (stop) return;
+        setAutoInfo({ status: r.status, auto: r.auto || null, version: r.version });
+        if (!r.runs.length) return;
+        for (const run of r.runs) applyRecheck(run.results, run.at);
+        const last = r.runs[r.runs.length - 1];
+        appliedRef.current = last.at;
+        setPrefs((p) => ({ ...p, autoApplied: last.at }));
+        const n = r.runs.reduce((a, run) => ({ down: a.down + (run.news.down || 0), goal: a.goal + (run.news.goal || 0), back: a.back + (run.news.back || 0) }), { down: 0, goal: 0, back: 0 });
+        const parts = [n.goal && 'цель достигнута — ' + n.goal, n.down && 'подешевели — ' + n.down, n.back && 'снова в продаже — ' + n.back].filter(Boolean);
+        setToast('Цены проверены автоматически' + (parts.length ? ': ' + parts.join(', ') : ', новостей нет'));
+      }).catch(() => {});
+    }, 1500);
+    return () => { stop = true; clearTimeout(t); };
+  }, [favs, applyRecheck, setPrefs]);
+
   const setFavColl = useCallback((id, coll) => setFavs((f) => (f[id] ? { ...f, [id]: { ...f[id], coll } } : f)), [setFavs]);
 
   const addColl = useCallback((name) => {
@@ -211,10 +238,10 @@ export function AppProvider({ children }) {
   }, [setColls, setFavs]);
 
   const value = useMemo(() => ({
-    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands,
+    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, autoInfo,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
     runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, setQuery, setPending, setLastRun, setPref,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
     setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

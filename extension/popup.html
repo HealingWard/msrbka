@@ -19,6 +19,11 @@
   <h1>Отмерь <span id="ver" style="font-weight:400;color:#8C8F96"></span></h1>
   <p class="ok">Расширение работает. Ищите на сайте <a href="https://healingward.github.io/msrbka/" target="_blank">«Отмерь»</a> — Stockmann и Lamoda будут открываться в свёрнутом окне.</p>
   <hr>
+  <p><b>Автопроверка цен.</b> Раз в день, пока открыт Chrome, расширение само проверяет цены вещей, за которыми вы следите на сайте, и присылает уведомление, если что-то подешевело.</p>
+  <p id="auto">…</p>
+  <label style="display:flex;gap:8px;align-items:center;margin:6px 0 8px"><input type="checkbox" id="autoOn" style="width:auto;height:auto;margin:0"> проверять автоматически</label>
+  <button id="autoNow">Проверить сейчас</button>
+  <hr>
   <p><b>Настройка разбора.</b> Сохранит страницы выдачи и первой карточки товара в «Загрузки/otmer» — пришлите эти файлы в чат с Claude.</p>
   <input id="q" value="бежевый тренч">
   <button id="dump">Сохранить страницы для настройки</button>

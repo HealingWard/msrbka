@@ -596,6 +596,8 @@ main.main { flex: 1; }
   gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); align-items: center; font-size: 14px; line-height: 20px;
 }
 .lrow:last-child { border-bottom: none; }
+.auto-line { margin-top: 4px; color: var(--muted); }
+.auto-line a { color: var(--ink); }
 .lrow.back { animation: lrow-back 1.6s ease-out; }
 @keyframes lrow-back { from { background: var(--soft); } to { background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .lrow.back { animation: none; } }

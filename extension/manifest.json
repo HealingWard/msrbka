@@ -2,21 +2,23 @@
   "manifest_version": 3,
   "name": "Отмерь — поиск в магазинах",
   "short_name": "Отмерь",
-  "version": "0.4.4",
-  "description": "Ищет товары в Stockmann и Lamoda для сайта «Отмерь»: открывает выдачу и карточки товаров в вашем браузере и собирает цены, размеры, цвет и бренд.",
+  "version": "0.5.0",
+  "description": "Ищет товары в Stockmann и Lamoda для сайта «Отмерь» и раз в день сам проверяет цены вещей, за которыми вы следите: открывает карточки в вашем браузере и собирает цены, размеры, цвет и бренд.",
   "minimum_chrome_version": "116",
   "permissions": [
     "tabs",
     "scripting",
     "storage",
     "downloads",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://stockmann.ru/*",
     "https://*.stockmann.ru/*",
     "https://www.lamoda.ru/*",
-    "https://lamoda.ru/*"
+    "https://lamoda.ru/*",
+    "https://5-42-124-4.sslip.io/*"
   ],
   "background": {
     "service_worker": "background.js"
