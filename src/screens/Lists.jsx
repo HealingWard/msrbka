@@ -11,7 +11,7 @@ import { DEMO_BY_ID } from '../lib/items.js';
 import { isSoldOut } from '../lib/product.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
-import { PriceChange, PromoTag, Segmented, Tape, inCrazyDays } from '../components/ui.jsx';
+import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
@@ -21,7 +21,8 @@ export function Lists() {
   const app = useApp();
   const { colls } = app;
   const [active, setActive] = useState('all');
-  const [priceF, setPriceF] = useState('all'); // all | changed | down | up — изменение цены с момента добавления
+  const [priceF, setPriceF] = useState('all'); // all | down | up — изменение цены с момента добавления
+  const [statusF, setStatusF] = useState(''); // '' | pora | wait | high | out | crazy — клик по счётчику статуса
   const [newName, setNewName] = useState(null);
   const [check, setCheck] = useState(null); // { busy, text, summary, error }
   const [exportOpen, setExportOpen] = useState(false);
@@ -56,16 +57,21 @@ export function Lists() {
 
   const activeValid = active === 'all' || active === 'none' || colls.some((c) => c.id === active) ? active : 'all';
   const listRows = all.filter((r) => activeValid === 'all' || (activeValid === 'none' ? !r.list : r.list === activeValid));
-  const PRICE_TEST = { all: () => true, changed: (r) => r.cur !== r.was, down: (r) => r.cur < r.was, up: (r) => r.cur > r.was };
-  const rows = listRows.filter(PRICE_TEST[priceF]);
-  const priceOpts = [['all', 'Все'], ['changed', 'Цена изменилась'], ['down', 'Подешевели'], ['up', 'Подорожали']]
-    .map(([k, l]) => [k, l + ' · ' + listRows.filter(PRICE_TEST[k]).length]);
+  // Два фильтра в одной строке счётчиков: статус и изменение цены с момента добавления; сочетаются друг с другом.
+  const PRICE_TEST = { all: () => true, down: (r) => r.cur < r.was, up: (r) => r.cur > r.was };
+  const STATUS_TEST = (k) => (k === 'crazy' ? (r) => inCrazyDays(r.item) : (r) => r.status.k === k);
+  const priceRows = listRows.filter(PRICE_TEST[priceF] || PRICE_TEST.all);
+  const statusRows = statusF ? listRows.filter(STATUS_TEST(statusF)) : listRows;
+  const rows = statusF ? priceRows.filter(STATUS_TEST(statusF)) : priceRows;
   const sum = (a) => a.reduce((x, r) => x + r.cur, 0);
   const down = all.filter((r) => r.cur < r.was).length;
   const activeName = activeValid === 'all' ? 'Все вещи' : activeValid === 'none' ? 'Без списка' : colls.find((c) => c.id === activeValid).name;
-  const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up'], ['out', 'Нет в наличии', 'ban']]
-    .map(([k, l, ic]) => ({ k, l, ic, n: rows.filter((r) => r.status.k === k).length }))
-    .filter((c) => c.k !== 'out' || c.n > 0);
+  // Счётчик статуса считается с учётом фильтра цены, счётчик цены — с учётом статуса.
+  const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up'], ['out', 'Нет в наличии', 'ban'], ['crazy', 'Сумасшедшие дни', null]]
+    .map(([k, l, ic]) => ({ k, l, ic, n: priceRows.filter(STATUS_TEST(k)).length }))
+    .filter((c) => (c.k !== 'out' && c.k !== 'crazy') || c.n > 0 || statusF === c.k);
+  const priceCounts = [['down', 'Подешевели', '↓', 'c-drop'], ['up', 'Подорожали', '↑', 'c-rise']]
+    .map(([k, l, ar, cls]) => ({ k, l, ar, cls, n: statusRows.filter(PRICE_TEST[k]).length }));
   const sCur = sum(rows);
   const sWas = rows.reduce((x, r) => x + r.was, 0);
   const sTg = rows.reduce((x, r) => x + (r.tg && r.cur > r.tg ? r.tg : r.cur), 0);
@@ -169,17 +175,23 @@ export function Lists() {
             <h2 className="h2">{activeName}</h2>
             <div className="st-counts">
               {counts.map((c) => (
-                <span key={c.k}><Icon name={c.ic} size={16} className={ST_COLOR[c.k]} />{c.l} <span className="mono">{c.n}</span></span>
+                <button key={c.k} type="button" className={'stc' + (statusF === c.k ? ' on' : '')} aria-pressed={statusF === c.k}
+                  title={statusF === c.k ? 'Показать все статусы' : 'Показать только «' + c.l + '»'} onClick={() => setStatusF(statusF === c.k ? '' : c.k)}>
+                  {c.ic ? <Icon name={c.ic} size={16} className={ST_COLOR[c.k]} /> : <i className="sw10" style={{ background: 'var(--tape)', borderColor: 'var(--tape)' }} />}
+                  {c.l} <span className="mono">{c.n}</span>
+                  {statusF === c.k && <Icon name="x" size={12} />}
+                </button>
               ))}
-              {rows.some((r) => inCrazyDays(r.item)) && <span><i className="sw10" style={{ background: 'var(--tape)', borderColor: 'var(--tape)' }} />Сумасшедшие дни <span className="mono">{rows.filter((r) => inCrazyDays(r.item)).length}</span></span>}
+              <span className="stc-sep" aria-hidden="true" />
+              {priceCounts.map((c) => (
+                <button key={c.k} type="button" className={'stc' + (priceF === c.k ? ' on' : '')} aria-pressed={priceF === c.k}
+                  title={priceF === c.k ? 'Показать все цены' : c.l + ' с момента добавления в списки'} onClick={() => setPriceF(priceF === c.k ? 'all' : c.k)}>
+                  <span className={'ar ' + c.cls}>{c.ar}</span>{c.l} <span className="mono">{c.n}</span>
+                  {priceF === c.k && <Icon name="x" size={12} />}
+                </button>
+              ))}
             </div>
           </div>
-          {listRows.length > 0 && (
-            <div className="toolbar" style={{ marginBottom: 0 }}>
-              <Segmented label="Изменение цены с момента добавления" options={priceOpts} value={priceF} onChange={setPriceF} />
-              <span className="small muted">цена сейчас — к цене при добавлении</span>
-            </div>
-          )}
 
           {rows.length > 0 ? (
             <>
@@ -245,8 +257,8 @@ export function Lists() {
               <div className="h1">Семь раз отмерь — один раз купи.</div>
               {listRows.length > 0 ? (
                 <>
-                  <div className="muted">{priceF === 'down' ? 'Ни одна вещь в этом списке не подешевела с момента добавления.' : priceF === 'up' ? 'Ни одна вещь в этом списке не подорожала с момента добавления.' : 'Цены вещей в этом списке не менялись с момента добавления.'}</div>
-                  <button type="button" className="btn btn-primary" onClick={() => setPriceF('all')}>Показать все вещи</button>
+                  <div className="muted">{statusF ? 'С таким статусом вещей нет' + (priceF !== 'all' ? ' среди отобранных по цене.' : '.') : priceF === 'down' ? 'Ни одна вещь в этом списке не подешевела с момента добавления.' : priceF === 'up' ? 'Ни одна вещь в этом списке не подорожала с момента добавления.' : 'Цены вещей в этом списке не менялись с момента добавления.'}</div>
+                  <button type="button" className="btn btn-primary" onClick={() => { setPriceF('all'); setStatusF(''); }}>Показать все вещи</button>
                 </>
               ) : (
                 <>
