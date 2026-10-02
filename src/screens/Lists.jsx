@@ -8,13 +8,14 @@ import { useHistories, withAdded } from '../lib/useHistories.js';
 import { recheckFavorites } from '../lib/source.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
+import { isSoldOut } from '../lib/product.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PriceChange, PromoTag, Segmented, Tape, inCrazyDays } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
-const ST_COLOR = { pora: 'c-drop', wait: 'c-muted', high: 'c-rise' };
+const ST_COLOR = { pora: 'c-drop', wait: 'c-muted', high: 'c-rise', out: 'c-rise' };
 
 export function Lists() {
   const app = useApp();
@@ -41,12 +42,13 @@ export function Lists() {
     const addedAt = new Date(fv.addedAt).getTime();
     const was = fv.priceAtAdd || priceAt(pts, addedAt) || cur;
     const tg = fv.target || null;
-    const soldOut = fv.checkStatus === 'noprice' || item.stock === 'Нет в наличии' || (!(item.sizes || []).length && (item.sizesOut || []).length > 0);
+    const soldOut = isSoldOut(item, fv);
     return {
       id, item, fv, st, cur, was, tg, addedAt, soldOut,
       list: colls.some((c) => c.id === fv.coll) ? fv.coll : '',
       dl: changePct(cur, was),
-      status: itemStatus(cur, tg, st),
+      // Нет в наличии — главный статус: подходящая цена ничего не значит, пока вещь не купить.
+      status: soldOut ? { k: 'out', label: 'Нет в наличии', note: cur < was ? 'подешевела, но купить нельзя' : 'ждём, когда вернётся', icon: 'ban' } : itemStatus(cur, tg, st),
       prog: goalProgress(was, cur, tg),
       checkFailed: fv.checkStatus === 'blocked' || fv.checkStatus === 'error',
     };
@@ -61,8 +63,9 @@ export function Lists() {
   const sum = (a) => a.reduce((x, r) => x + r.cur, 0);
   const down = all.filter((r) => r.cur < r.was).length;
   const activeName = activeValid === 'all' ? 'Все вещи' : activeValid === 'none' ? 'Без списка' : colls.find((c) => c.id === activeValid).name;
-  const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up']]
-    .map(([k, l, ic]) => ({ k, l, ic, n: rows.filter((r) => r.status.k === k).length }));
+  const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up'], ['out', 'Нет в наличии', 'ban']]
+    .map(([k, l, ic]) => ({ k, l, ic, n: rows.filter((r) => r.status.k === k).length }))
+    .filter((c) => c.k !== 'out' || c.n > 0);
   const sCur = sum(rows);
   const sWas = rows.reduce((x, r) => x + r.was, 0);
   const sTg = rows.reduce((x, r) => x + (r.tg && r.cur > r.tg ? r.tg : r.cur), 0);
@@ -186,13 +189,14 @@ export function Lists() {
                   {rows.map((r) => {
                     const type = r.item.kind || detectTypes(r.item.title)[0] || '';
                     return (
-                      <div key={r.id} className="lrow">
+                      <div key={r.id} className={'lrow' + (r.soldOut ? ' out' : '')}>
                         <button type="button" className="tph" onClick={() => open(r.id)} aria-label={'Открыть ' + r.item.title}>
                           {r.item.image && <img src={r.item.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => e.currentTarget.remove()} />}
                         </button>
                         <button type="button" className="item" onClick={() => open(r.id)}>
                           <div className="label">{r.item.store}{type ? ' · ' + type : ''}</div>
                           <div style={{ marginTop: 2 }}>{r.item.brand && <b>{r.item.brand}</b>} {r.item.title}</div>
+                          {r.soldOut && <span className="oos-tag">Нет в наличии</span>}
                           <PromoTag promo={r.item.promo} />
                         </button>
                         <div className="lst">
@@ -202,8 +206,8 @@ export function Lists() {
                         <div className="lnow">
                           <span className="price">{rub(r.cur)}</span>
                           <PriceChange small badge={deltaBadge(r.dl)} title={'с момента добавления: было ' + rub(r.was) + ', сейчас ' + rub(r.cur)}>{' '}<span>с {dateShort(r.addedAt)}</span></PriceChange>
-                          {(r.soldOut || r.checkFailed || r.fv.checkedAt) && (
-                            <span className="sub">{r.soldOut ? 'нет в наличии' : r.checkFailed ? 'не удалось проверить' : 'проверено ' + whenStr(r.fv.checkedAt)}</span>
+                          {(r.checkFailed || r.fv.checkedAt) && (
+                            <span className="sub">{r.checkFailed ? 'не удалось проверить' : (r.soldOut ? 'цена последней проверки · ' : 'проверено ') + whenStr(r.fv.checkedAt)}</span>
                           )}
                         </div>
                         <div>
