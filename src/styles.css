@@ -589,6 +589,17 @@ main.main { flex: 1; }
   gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); align-items: center; font-size: 14px; line-height: 20px;
 }
 .lrow:last-child { border-bottom: none; }
+/* Нет в наличии: бледное фото, полоса и метка, зачёркнутая цена — видно сразу, без вчитывания. */
+.lrow.out { background: color-mix(in srgb, var(--rise) 6%, transparent); box-shadow: inset 4px 0 0 var(--rise); }
+.lrow.out .tph img { filter: grayscale(1); opacity: .45; }
+.lrow.out .item > div:not(.label), .lrow.out .lgoal { opacity: .6; }
+.lrow.out .lnow .price { text-decoration: line-through; text-decoration-thickness: 1.5px; color: var(--muted); }
+.lrow.out .lst b { color: var(--rise); }
+.oos-tag { display: inline-flex; align-items: center; margin: 6px 8px 0 0; padding: 2px 8px; border-radius: 4px; background: var(--rise); color: #fff; font-family: var(--mono); font-size: 11px; line-height: 16px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.meta .oos-tag { margin: 0 8px 0 0; }
+.oos-note { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; border: 1px solid var(--rise); border-left-width: 4px; border-radius: 8px; color: var(--ink); font-size: 14px; line-height: 20px; background: color-mix(in srgb, var(--rise) 6%, transparent); }
+.oos-note .icon { color: var(--rise); flex: none; margin-top: 1px; }
+.oos-note b { color: var(--rise); }
 .lrow.head { padding: 12px 16px; background: var(--paper); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 11px; line-height: 16px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .lrow .tph { width: 48px; height: 56px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--track) 0 5px, var(--paper) 5px 10px); padding: 0; border: none; position: relative; overflow: hidden; }
 .lrow .tph img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--paper); }

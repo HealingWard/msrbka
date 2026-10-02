@@ -1,6 +1,10 @@
 import { HEX, storeByName } from '../data/catalog.js';
 import { fmt, plural, rub } from './format.js';
 
+/** Вещи нет в наличии: магазин не показал цену при проверке, отметил «нет в наличии» или все размеры распроданы. */
+export const isSoldOut = (item, fv) => fv?.checkStatus === 'noprice' || item?.stock === 'Нет в наличии'
+  || (!(item?.sizes || []).length && (item?.sizesOut || []).length > 0);
+
 /** Отображаемые поля товара, общие для карточки, строки таблицы, страницы товара и выгрузки. */
 export function productView(p) {
   const disc = p.old ? Math.round((1 - p.price / p.old) * 100) : 0;

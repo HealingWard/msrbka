@@ -182,6 +182,9 @@ export function AppProvider({ children }) {
           }
           if (cur.item?.image) merged.image = cur.item.image;
           if (r.item.old == null) merged.old = null; // скидка закончилась
+          // Наличие — всегда по свежей проверке: вещь могла вернуться в продажу или распродаться.
+          if ((r.item.sizes || []).length || (r.item.sizesOut || []).length) { merged.sizes = r.item.sizes || []; merged.sizesOut = r.item.sizesOut || []; }
+          merged.stock = r.item.stock || ((r.item.sizes || []).length ? 'В наличии' : null);
           merged.promo = r.item.promo || null; // акция могла начаться или закончиться
           next[r.id] = { ...cur, item: merged, checkedAt: at, checkStatus: 'ok' };
         } else if (r.status === 'noprice') {

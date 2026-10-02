@@ -3,7 +3,7 @@ import { ALLSIZES } from '../data/catalog.js';
 import { dateLong, ddmm, pct, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
-import { productView } from '../lib/product.js';
+import { isSoldOut, productView } from '../lib/product.js';
 import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
 import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing.js';
@@ -59,6 +59,7 @@ export function Product({ id, from }) {
   const m = matchProduct(p, showMatch ? run.crit : {});
   const v = productView(p);
   const fav = app.favs[p.id];
+  const soldOut = isSoldOut(p, fav);
   const target = fav?.target || null;
   const want = showMatch ? run.crit.size : null;
   const checkedIso = details.checkedAt || fav?.checkedAt || run?.at;
@@ -131,6 +132,12 @@ export function Product({ id, from }) {
             <PriceChange badge={changeBadge(st90)} title="к обычной цене за 90 дней" />
             <PromoTag promo={p.promo} />
           </div>
+          {soldOut && (
+            <div className="oos-note" role="status">
+              <Icon name="ban" size={18} />
+              <div><b>Нет в наличии</b> — цена указана по последней проверке. Если вещь вернётся в продажу, это будет видно после проверки цен в «Списках и целях».</div>
+            </div>
+          )}
 
           <div className="spec">
             <span className="k">Размеры</span>
@@ -160,7 +167,7 @@ export function Product({ id, from }) {
             <button type="button" className="btn btn-secondary" aria-expanded={goalOpen} onClick={() => setGoalOpen(!goalOpen)}>
               <Icon name="hourglass" size={18} />{target ? 'Изменить цель' : 'Задать цель'}
             </button>
-            <a className="btn btn-primary" href={v.url} target="_blank" rel="noopener noreferrer"><Icon name="scissors" size={18} />Купить в {p.store}</a>
+            <a className="btn btn-primary" href={v.url} target="_blank" rel="noopener noreferrer"><Icon name="scissors" size={18} />{soldOut ? 'Открыть в ' : 'Купить в '}{p.store}</a>
           </div>
 
           {goalOpen && (

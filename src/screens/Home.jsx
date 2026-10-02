@@ -9,6 +9,7 @@ import { useHistories, withAdded } from '../lib/useHistories.js';
 import { startSearch } from '../lib/startSearch.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID, DEMO_ITEMS } from '../lib/items.js';
+import { isSoldOut } from '../lib/product.js';
 import { Icon } from '../components/Icon.jsx';
 import { BrandPicker, Chip, PriceChange } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
@@ -29,7 +30,7 @@ function useFollowRows(app) {
     const cur = item.price;
     const was = fv.priceAtAdd || priceAt(pts, new Date(fv.addedAt).getTime()) || cur;
     const tg = fv.target || null;
-    return { id, item, cur, was, tg, st, dl: changePct(cur, was), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
+    return { id, item, cur, was, tg, st, soldOut: isSoldOut(item, fv), dl: changePct(cur, was), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
   });
 }
 
@@ -69,7 +70,8 @@ export function Home() {
   const rows = useFollowRows(app);
   const finds = useFinds(app);
 
-  const pora = rows.filter((r) => r.status.k === 'pora');
+  // Вещь, которой нет в наличии, купить нельзя — в «Пора покупать» её не показываем.
+  const pora = rows.filter((r) => r.status.k === 'pora' && !r.soldOut);
   const wait = rows.filter((r) => r.tg && r.cur > r.tg);
   const brandsLabel = !selBrands.length ? 'любые' : selBrands.length === 1 ? selBrands[0] : selBrands[0] + ' +' + (selBrands.length - 1);
   const go = () => startSearch(app, query);
@@ -153,7 +155,7 @@ export function Home() {
               <button type="button" key={r.id} className="blk-row clickable btnrow" onClick={() => openItem(r.id, 'lists')}>
                 <span className="t">{r.item.brand ? r.item.brand + ' · ' : ''}{r.item.title}</span>
                 <span className="bar4"><i style={{ width: Math.round(r.prog * 100) + '%' }} /></span>
-                <span className="meta">ЦЕЛЬ {rub(r.tg)} · ОСТАЛОСЬ {rub(r.cur - r.tg)}</span>
+                <span className="meta">{r.soldOut && <span className="oos-tag">Нет в наличии</span>}ЦЕЛЬ {rub(r.tg)} · ОСТАЛОСЬ {rub(r.cur - r.tg)}</span>
               </button>
             ))}
             {!wait.length && <div className="blk-empty">Задайте цель на странице вещи — здесь появится, сколько осталось до неё.</div>}
