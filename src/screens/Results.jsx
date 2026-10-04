@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ALLSIZES, HEX } from '../data/catalog.js';
+import { ALLSIZES, DS_CAT, HEX } from '../data/catalog.js';
 import { ddmm, fmt, plural, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
@@ -148,7 +148,7 @@ export function Results({ run }) {
   const loading = missing.length > 0;
 
   // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
-  const { setStoreResult, setLastRun, learnBrands } = app;
+  const { setStoreResult, setLastRun, learnBrands, learnCatBrands } = app;
   const missingKey = missing.join('|');
   useEffect(() => {
     if (!missingKey) return undefined;
@@ -158,7 +158,9 @@ export function Results({ run }) {
         .then((res) => {
           if (ctrl.signal.aborted) return;
           if (res.brands && res.brands.length) learnBrands(res.brands);
-          const { brands: _b, ...rest } = res;
+          // Бренды из фильтра выдачи — бренды категории этого поиска (тапочки → обувь).
+          if (res.facetBrands && res.facetBrands.length && DS_CAT[run.ds]) learnCatBrands(DS_CAT[run.ds], res.facetBrands);
+          const { brands: _b, facetBrands: _f, ...rest } = res;
           setStoreResult(key, name, rest);
         })
         .catch(() => { /* отменено */ });

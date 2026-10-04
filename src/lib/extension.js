@@ -41,6 +41,7 @@ function request(payload, { onProgress, signal, timeoutMs = 5 * 60000 } = {}) {
 
 export const extSearch = (store, query, opts = {}) => request({ pricel: 'search', store, query, limit: opts.limit || 150 }, opts);
 export const extDetails = (url, opts) => request({ pricel: 'details', url }, { ...opts, timeoutMs: 90000 });
+export const extCatBrands = (opts = {}) => request({ pricel: 'catbrands', force: !!opts.force }, { ...opts, timeoutMs: 6 * 60000 });
 export const extBrands = (store, opts = {}) => request({ pricel: 'brands', store, force: !!opts.force }, { ...opts, timeoutMs: 4 * 60000 });
 export const extRecheck = (urls, opts = {}) => request({ pricel: 'recheck', urls }, { ...opts, timeoutMs: Math.max(3, urls.length) * 60000 });
 export const extWatch = (payload) => request({ pricel: 'watch', ...payload }, { timeoutMs: 8000 });

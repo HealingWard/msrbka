@@ -202,7 +202,7 @@ async function searchJob(storeId, query, limit, send) {
     };
     await Promise.all(Array.from({ length: DETAILS_PARALLEL }, worker));
     items = items.map((x) => ({ ...x, store: s.name, storeId }));
-    send({ pricel: 'result', status: 'ok', items, searchUrl, brands: (r.brands || []).slice(0, 2000) });
+    send({ pricel: 'result', status: 'ok', items, searchUrl, brands: (r.brands || []).slice(0, 2000), facetBrands: (r.facetBrands || []).slice(0, 2000) });
   } catch (e) {
     send({ pricel: 'result', status: 'error', items: [], error: String(e.message || e), searchUrl });
   } finally {
@@ -435,6 +435,48 @@ async function autoWatch(m) {
   return { status: 'ok', runs, auto: { enabled: st.enabled, lastRun: st.lastRun || null, running: st.running || null, every: AUTO_EVERY } };
 }
 
+// ——— бренды по категориям ———
+// Чтобы в выборе брендов были только бренды нужной категории, раз в неделю открываем выдачу магазина
+// по общему запросу категории («обувь», «сумки»…) и берём список из фильтра «Бренд» этой выдачи.
+const CAT_QUERIES = { clothes: ['одежда'], shoes: ['обувь'], acc: ['аксессуары', 'сумки'], home: ['товары для дома'] };
+
+async function catBrandsJob(force, send) {
+  const k = 'catBrands';
+  const cached = (await chrome.storage.local.get(k))[k];
+  if (!force && cached && Date.now() - cached.t < BRANDS_TTL) return send({ pricel: 'result', status: 'ok', cats: cached.cats, cached: true });
+  const cats = {};
+  const win = await openWindow();
+  try {
+    for (const s of Object.values(STORES)) {
+      let blocked = 0;
+      for (const [cat, queries] of Object.entries(CAT_QUERIES)) {
+        for (const q of queries) {
+          if (blocked >= 2) break;
+          let r = null;
+          try { r = await visit(win, s.search(q), 'search', { linkPattern: s.linkPattern, host: s.host, brandsOnly: true }, () => send({ pricel: 'progress', stage: 'human' })); } catch { r = null; }
+          if (r?.blocked) { blocked++; continue; }
+          const list = r?.facetBrands || [];
+          if (list.length) cats[cat] = [...(cats[cat] || []), ...list];
+          await sleep(800);
+        }
+      }
+    }
+    // Бренды обоих магазинов вместе, без повторов; пустая категория — не затираем прошлый список.
+    const out = { ...(cached?.cats || {}) };
+    for (const [cat, list] of Object.entries(cats)) {
+      const m = new Map();
+      for (const b of list) if (b && !m.has(b.toLowerCase())) m.set(b.toLowerCase(), b);
+      if (m.size) out[cat] = [...m.values()].slice(0, 5000);
+    }
+    if (Object.keys(cats).length) await chrome.storage.local.set({ [k]: { t: Date.now(), cats: out } });
+    send({ pricel: 'result', status: Object.keys(out).length ? 'ok' : 'empty', cats: out });
+  } catch (e) {
+    send({ pricel: 'result', status: 'error', cats: cached?.cats || {}, error: String(e.message || e) });
+  } finally {
+    await closeWindow(win);
+  }
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'pricel') return;
   let alive = true;
@@ -444,6 +486,7 @@ chrome.runtime.onConnect.addListener((port) => {
     if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.limit, send);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
     else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
+    else if (m.type === 'catbrands') catBrandsJob(!!m.force, send);
     else if (m.type === 'recheck') recheckJob(m.urls, send);
   });
 });

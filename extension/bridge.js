@@ -1,5 +1,5 @@
 // Мост между страницей «Отмерь» и расширением.
-// Страница шлёт window.postMessage({ pricel: 'hello' | 'search' | 'details' | 'brands' | 'recheck' | 'watch', id, ... }),
+// Страница шлёт window.postMessage({ pricel: 'hello' | 'search' | 'details' | 'brands' | 'catbrands' | 'recheck' | 'watch', id, ... }),
 // мост пересылает в фоновый скрипт и возвращает ответы/прогресс тем же способом.
 (() => {
   const VERSION = chrome.runtime.getManifest().version;
@@ -22,7 +22,7 @@
       }
       return;
     }
-    if (!['search', 'details', 'brands', 'recheck'].includes(m.pricel)) return;
+    if (!['search', 'details', 'brands', 'catbrands', 'recheck'].includes(m.pricel)) return;
     let port;
     try {
       port = chrome.runtime.connect({ name: 'pricel' });
