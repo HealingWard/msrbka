@@ -5,8 +5,8 @@ import { navigate } from './lib/router.js';
 import { runKey, runToParams } from './lib/search.js';
 import { isLive } from './lib/config.js';
 import { DEMO_BY_ID, snapshot } from './lib/items.js';
-import { addKnownBrands } from './data/catalog.js';
-import { extBrands, extensionVersion } from './lib/extension.js';
+import { PRODUCTS, addCatBrands, addKnownBrands } from './data/catalog.js';
+import { extBrands, extCatBrands, extensionVersion, versionAtLeast } from './lib/extension.js';
 import { syncAutoCheck } from './lib/source.js';
 
 const DAY = 86400000;
@@ -37,6 +37,11 @@ const MAX_CACHED_RUNS = 4;
 const seedColls = () => [
   { id: 'c1', name: 'Себе, осень' }, { id: 'c2', name: 'Маше' }, { id: 'c3', name: 'Маме' },
 ];
+// Бренды по категориям: в демо — из демо-каталога, в живом режиме собираются из выдачи магазинов.
+const seedCatBrands = () => (isLive() ? {} : {
+  clothes: PRODUCTS.filter((p) => p.ds === 'trench').map((p) => p.brand),
+  shoes: PRODUCTS.filter((p) => p.ds === 'shoes').map((p) => p.brand),
+});
 const seedPrefs = () => ({ selStores: ['Stockmann', 'Lamoda'], selBrands: [], cats: ['Одежда'], view: 'grid', tableDark: true, askClarify: true, v: 2 });
 
 const AppContext = createContext(null);
@@ -76,6 +81,33 @@ export function AppProvider({ children }) {
     }).catch(() => {});
     return () => { stop = true; };
   }, [learnBrands]);
+  // Бренды по категориям (одежда, обувь, аксессуары, дом) — чтобы в выборе были только бренды нужной категории.
+  const [catBrands, setCatBrands] = usePersistentState('catBrands', seedCatBrands);
+  useState(() => { for (const [cat, list] of Object.entries(catBrands)) addCatBrands(cat, list); });
+  const learnCatBrands = useCallback((cat, list) => {
+    if (!addCatBrands(cat, list)) return;
+    setCatBrands((cur) => ({ ...cur, [cat]: [...new Set([...(cur[cat] || []), ...list.map((b) => String(b).trim()).filter(Boolean)])].slice(-5000) }));
+  }, [setCatBrands]);
+  // Раз в неделю расширение (0.5.1+) собирает бренды каждой категории из фильтра «Бренд» в выдаче магазинов.
+  useEffect(() => {
+    if (!isLive()) return undefined;
+    const KEY = 'pricel:catBrandsSync';
+    let last = 0;
+    try { last = +localStorage.getItem(KEY) || 0; } catch { /* нет хранилища */ }
+    if (Date.now() - last < 7 * DAY) return undefined;
+    let stop = false;
+    const t = setTimeout(() => {
+      extensionVersion().then((v) => {
+        if (!v || stop || !versionAtLeast(v, '0.5.1')) return null;
+        return extCatBrands().then((r) => {
+          if (stop || !r || !r.cats) return;
+          for (const [cat, list] of Object.entries(r.cats)) if (list && list.length) learnCatBrands(cat, list);
+          if (r.status === 'ok') try { localStorage.setItem(KEY, String(Date.now())); } catch { /* нет хранилища */ }
+        });
+      }).catch(() => {});
+    }, 4000); // после загрузки страницы и синхронизации брендов Stockmann
+    return () => { stop = true; clearTimeout(t); };
+  }, [learnCatBrands]);
   const notify = useCallback((msg) => setToast(msg), []);
   const clearToast = useCallback(() => setToast(null), []);
 
@@ -238,10 +270,10 @@ export function AppProvider({ children }) {
   }, [setColls, setFavs]);
 
   const value = useMemo(() => ({
-    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, autoInfo,
+    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
     runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
     setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { PRODUCTS, STORE_NAMES, allBrands } from '../data/catalog.js';
+import { DS_CAT, PRODUCTS, STORE_NAMES, allBrands, brandsForCats } from '../data/catalog.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
@@ -123,7 +123,7 @@ export function Clarify() {
               </div>
               {k === 'brand' ? (
                 <div className="qcard-opts">
-                  <BrandPicker wide brands={allBrands()} selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
+                  <BrandPicker wide brands={brandsForCats(DS_CAT[ds] ? [DS_CAT[ds]] : [], qBrands)} selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
                     label={qBrands.length ? (qBrands.length <= 2 ? qBrands.join(', ') : qBrands[0] + ' +' + (qBrands.length - 1)) : ''}
                     meta={inResults}
                     onToggle={(b) => setAns((st) => ({ ...st, brand: toggle((st.brand || []).filter((x) => x !== ANY_BRAND), b) }))}

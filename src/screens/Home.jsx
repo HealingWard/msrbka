@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CATS, STORE_NAMES, allBrands } from '../data/catalog.js';
+import { CATS, CAT_KEY, STORE_NAMES, brandsForCats } from '../data/catalog.js';
 import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { detectTypes } from '../lib/search.js';
@@ -94,7 +94,8 @@ export function Home() {
               return <Chip key={n} on={on} onClick={() => setPref('selStores', (l) => toggle(l, n))}>{on ? '✓ ' : ''}{n}</Chip>;
             })}
           </div>
-          <BrandPicker brands={allBrands()} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
+          {/* Бренды только выбранных категорий: обувь — бренды обуви, аксессуары — аксессуаров. */}
+          <BrandPicker brands={brandsForCats(cats.map((c) => CAT_KEY[c]), selBrands)} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
               <div className="dd-foot">
