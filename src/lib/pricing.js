@@ -93,10 +93,13 @@ export function itemStatus(cur, tg, st) {
   if (tg && cur <= tg) return { k: 'pora', label: 'Пора', note: 'цель достигнута', icon: 'scissors' };
   if (st && st.known && cur > st.p75) return { k: 'high', label: 'Выше обычной', note: st.va > 0 ? 'на ' + st.va + ' % выше обычной' : 'выше коридора', icon: 'trending-up' };
   if (tg) return { k: 'wait', label: 'Ждём', note: 'до цели ' + rub(cur - tg), icon: 'hourglass' };
-  if (st && st.known && cur <= st.p25) {
-    return { k: 'pora', label: 'Пора', note: st.isMin ? 'минимум за 90 дней' : 'ниже обычной на ' + Math.abs(st.va) + ' %', icon: 'scissors' };
+  // «Пора» — только если цена действительно ниже обычной: ниже нижней границы коридора или минимум за период.
+  // Цена, которая не менялась, равна обычной — это не повод покупать (раньше такие вещи получали «ниже обычной на 0 %»).
+  if (st && st.known && (cur < st.p25 || st.isMin) && cur < st.avg) {
+    return { k: 'pora', label: 'Пора', note: st.isMin ? 'минимум за 90 дней' : 'ниже обычной на ' + Math.max(1, Math.abs(st.va)) + ' %', icon: 'scissors' };
   }
-  return { k: 'wait', label: 'Ждём', note: st && st.known ? 'цена в обычном коридоре' : 'история цены копится', icon: 'hourglass' };
+  const flat = st && st.known && Math.min(...st.v) === Math.max(...st.v);
+  return { k: 'wait', label: 'Ждём', note: !st || !st.known ? 'история цены копится' : flat ? 'цена не менялась' : 'цена в обычном коридоре', icon: 'hourglass' };
 }
 
 /** Прогресс до цели 0…1: (цена при добавлении − текущая) / (цена при добавлении − цель). */
