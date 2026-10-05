@@ -29,3 +29,24 @@ describe('история цены в первую неделю', () => {
     expect(priceSteps(pts)).toEqual([{ t: 1, price: 100 }, { t: 3, price: 90 }, { t: 5, price: 100 }]);
   });
 });
+
+import { itemStatus } from '../pricing.js';
+
+describe('статус вещи', () => {
+  const series = (prices) => prices.map((price, i) => ({ t: now - (prices.length - 1 - i) * DAY, price }));
+  it('цена не менялась две недели — «Ждём», а не «Пора · ниже обычной на 0 %»', () => {
+    const st = priceStats(series(Array(14).fill(18990)), 90, now);
+    expect(st.known).toBe(true);
+    const s = itemStatus(18990, null, st);
+    expect(s.k).toBe('wait');
+    expect(s.note).toBe('цена не менялась');
+  });
+  it('цена упала до минимума — «Пора»', () => {
+    const st = priceStats(series([...Array(13).fill(20000), 16000]), 90, now);
+    expect(itemStatus(16000, null, st).k).toBe('pora');
+  });
+  it('цена вернулась к обычной после скидки — «Ждём»', () => {
+    const st = priceStats(series([...Array(10).fill(20000), 16000, 16000, 20000, 20000]), 90, now);
+    expect(itemStatus(20000, null, st).k).toBe('wait');
+  });
+});
