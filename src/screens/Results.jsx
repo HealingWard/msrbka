@@ -198,7 +198,7 @@ export function Results({ run }) {
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
   const { base, list, hidden, hiddenWhy } = useMemo(
-    () => getResults(items, run.crit, f, sort, { types, showOther }),
+    () => getResults(items, run.crit, f, sort, { types, showOther, ds: run.ds }),
     [items, run.crit, f, sort, types, showOther],
   );
 

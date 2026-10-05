@@ -1,4 +1,6 @@
-import { CATS, NEAR, STORE_NAMES, allBrands, brandKey } from '../data/catalog.js';
+import { CATS, STORE_NAMES, allBrands, brandKey } from '../data/catalog.js';
+import { NEAR, detectColors } from './colors.js';
+import { matches as sizeTableMatch } from './sizes.js';
 import { cap, rub } from './format.js';
 
 export const colorList = (c) => [].concat(c || []);
@@ -6,18 +8,6 @@ const genitive = (c) => (c.endsWith('ый') ? c.slice(0, -2) + 'ого' : c.ends
 const genitiveList = (c) => colorList(c).map(genitive).join(' / ');
 export const colorStr = (c) => colorList(c).join(' / ');
 
-// Основа слова → цвет в словарной форме: «бирюзовые», «голубая» → «бирюзовый», «голубой».
-const COLOR_STEMS = [
-  ['бежев', 'бежевый'], ['молочн', 'молочный'], ['песочн', 'песочный'], ['черн', 'чёрный'], ['хаки', 'хаки'],
-  ['кремов', 'кремовый'], ['шоколад', 'шоколадный'], ['коричнев', 'коричневый'], ['графит', 'графитовый'], ['кэмел', 'кэмел'],
-  ['бирюз', 'бирюзовый'], ['голуб', 'голубой'], ['мятн', 'мятный'], ['зелен', 'зелёный'], ['оливк', 'оливковый'], ['оливков', 'оливковый'],
-  ['изумруд', 'изумрудный'], ['розов', 'розовый'], ['пудров', 'пудровый'], ['персик', 'персиковый'], ['коралл', 'коралловый'],
-  ['красн', 'красный'], ['бордо', 'бордовый'], ['вишнев', 'бордовый'], ['винн', 'бордовый'], ['марсал', 'бордовый'], ['терракот', 'терракотовый'],
-  ['рыж', 'рыжий'], ['оранж', 'оранжевый'], ['желт', 'жёлтый'], ['горчич', 'горчичный'], ['лимон', 'жёлтый'],
-  ['фиолет', 'фиолетовый'], ['сирен', 'сиреневый'], ['лилов', 'лиловый'], ['лаванд', 'сиреневый'], ['фукси', 'фуксия'],
-  ['золот', 'золотой'], ['серебр', 'серебряный'], ['бронз', 'бронзовый'], ['слонов', 'молочный'], ['айвори', 'молочный'], ['экрю', 'молочный'],
-  ['антрацит', 'графитовый'], ['индиго', 'тёмно-синий'], ['ультрамарин', 'синий'], ['нюдов', 'бежевый'], ['таупе', 'коричневый'], ['мокко', 'коричневый'],
-];
 const escapeRe = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const norm = (s) => s.toLowerCase().replace(/ё/g, 'е');
 
@@ -25,22 +15,8 @@ const norm = (s) => s.toLowerCase().replace(/ё/g, 'е');
  * Разбирает свободный запрос: цвет(а), размер, бюджет, бренды и тип товара.
  * `cats` — выбранные на главной категории, помогают, если тип не назван в тексте.
  */
-/** Цвета, упомянутые в тексте (в каноничной форме: «бежевый», «тёмно-синий»…). */
-export function detectColors(text) {
-  const low = norm(text);
-  const words = low.split(/[^a-zа-я0-9]+/).filter(Boolean);
-  const colors = [];
-  const add = (c) => { if (!colors.includes(c)) colors.push(c); };
-  if (/темно\s*-?\s*син/.test(low)) add('тёмно-синий');
-  for (const w of words) {
-    for (const [stem, c] of COLOR_STEMS) if (w.startsWith(stem)) add(c);
-    if (/^син(ий|ие|яя|ее|их|юю|его|ей)$/.test(w) && !colors.includes('тёмно-синий')) add('синий');
-    if (/^бел(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('белый');
-    if (/^сер(ый|ые|ая|ое|ых|ую|ого|ой)$/.test(w)) add('серый');
-    if (/^(небесн|лазурн)/.test(w)) add('голубой');
-  }
-  return colors;
-}
+// Цвета — по базе src/data/colors.json (143 цвета с близкими оттенками).
+export { detectColors };
 
 const brandRe = (b) => new RegExp('(^|[^a-zа-я0-9])' + escapeRe(norm(b)) + '(?=$|[^a-zа-я0-9])');
 
@@ -131,6 +107,8 @@ export function parseQuery(q, cats = []) {
 
   // Товары для дома: размер — только размер постельного белья, пол не учитываем.
   if (ds === 'home') {
+    // В товарах для дома «ванильный», «лавандовый» — чаще запах: цвет только рядом со словом «цвет».
+    colors.splice(0, colors.length, ...detectColors(q, { home: true }));
     const bed = low.match(new RegExp(BED_SIZE + '(?=[^а-яa-z0-9]|$)'));
     const key = bed ? bedKey(bed[0] + (/евро|семейн/.test(bed[0]) ? '' : ' сп')) : null;
     return { color: colors.length ? colors : null, size: key, budget, brands, ds, gender: null };
@@ -162,8 +140,22 @@ export const GLYPH = { ok: '✓', near: '≈', no: '✕', any: '—', unk: '?' }
 const LABEL = { brand: 'Бренд', size: 'Размер', color: 'Цвет', price: 'Цена' };
 const KEYS = ['brand', 'size', 'color', 'price'];
 
-/** Оценивает товар по критериям: процент соответствия, пояснение и разбор по пунктам. */
-export function matchProduct(p, c = {}) {
+/**
+ * Размерная сетка для категории и «для кого»: по ней «38» в запросе совпадает с «EU 39» у вещи, «M» — с «46».
+ * null — сетки нет (аксессуары), тогда сравниваем как раньше.
+ */
+export function sizeSystem(ds, gender) {
+  const men = gender === 'men' || gender === 'boys';
+  const kids = gender === 'kids' || gender === 'girls' || gender === 'boys';
+  if (ds === 'trench') return kids ? 'kids' : men ? 'clothesMen' : 'clothesWomen';
+  if (ds === 'shoes') return kids ? 'kidsShoes' : men ? 'shoesMen' : 'shoesWomen';
+  return null;
+}
+/** Размер вещи подходит под размер из запроса: как написано или по таблице соответствия размеров. */
+const sizeOk = (z, q, sys) => sizeEq(z, q) || (!!sys && !bedKey(q) && !bedKey(z) && sizeTableMatch(q, z, sys));
+
+/** Оценивает товар по критериям: процент соответствия, пояснение и разбор по пунктам. sys — размерная сетка (sizeSystem). */
+export function matchProduct(p, c = {}, sys = null) {
   const r = {};
   r.brand = c.brands && c.brands.length
     ? (!p.brand ? { s: 'unk', t: 'магазин не указал бренд' }
@@ -176,7 +168,7 @@ export function matchProduct(p, c = {}) {
     : c.size
     ? (!sizes.length && sizesOut.length ? { s: 'no', t: 'нет в наличии ни одного размера' }
       : !sizes.length ? { s: 'unk', t: 'наличие ' + c.size + ' уточните в магазине' }
-      : sizes.some((z) => sizeEq(z, c.size) && !isUniversalSize(z)) ? { s: 'ok', t: c.size + ' в наличии' }
+      : sizes.some((z) => sizeOk(z, c.size, sys) && !isUniversalSize(z)) ? { s: 'ok', t: c.size + ' в наличии' }
         : sizes.some(isUniversalSize) ? { s: 'ok', t: 'единый размер' }
         : sizes.some((z) => sizeNear(z, c.size)) ? { s: 'near', t: 'есть ' + sizes.filter((z) => sizeNear(z, c.size)).join(', ') + ' ≈ ' + c.size }
           : { s: 'no', t: 'нет ' + c.size + ', есть ' + sizes.join(', ') })
@@ -347,12 +339,13 @@ function dedupe(items) {
  * opts.types — типы товара из запроса.
  */
 export function getResults(items, crit, filters, sort, opts = {}) {
+  const sys = sizeSystem(opts.ds, crit.gender);
   const sorter = SORTERS[sort] || SORTERS.match;
   const types = opts.types || [];
   const reasonOf = (p) => {
     if (types.length) { const t = detectTypes(p.title); if (t.length > 0 && !t.some((x) => types.includes(x))) return 'type'; }
     if (genderMismatch(p, crit.gender)) return 'gender';
-    const m = matchProduct(p, crit);
+    const m = matchProduct(p, crit, sys);
     if (crit.size && m.reasons[1].s === 'no') return 'size';
     // Размер белья в сантиметрах («200×220») сверить с «евро» нельзя — такие комплекты не прячем.
     if (crit.size && m.reasons[1].s === 'unk' && !(bedKey(crit.size) && (p.sizes || []).length)) return 'sizeUnk';
@@ -363,7 +356,7 @@ export function getResults(items, crit, filters, sort, opts = {}) {
   const all = dedupe(items).map((p) => ({ p, why: reasonOf(p) }));
   const hiddenList = all.filter((x) => x.why);
   const pool = (opts.showOther ? all : all.filter((x) => !x.why)).map((x) => x.p);
-  const base = pool.map((p) => ({ p, m: matchProduct(p, crit) })).sort(sorter);
+  const base = pool.map((p) => ({ p, m: matchProduct(p, crit, sys) })).sort(sorter);
   const f = filters;
   const list = base.filter(({ p }) =>
     (!f.stores.length || f.stores.includes(p.store)) &&

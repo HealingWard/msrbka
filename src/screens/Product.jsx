@@ -4,7 +4,7 @@ import { dateLong, ddmm, pct, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
 import { isSoldOut, productView } from '../lib/product.js';
-import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
+import { GLYPH, matchProduct, runToParams, sizeSystem } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
 import { SIGNAL, changeBadge, changePct, goalProgress, priceSignal } from '../lib/pricing.js';
 import { withAdded, withCurrent } from '../lib/useHistories.js';
@@ -56,7 +56,7 @@ export function Product({ id, from }) {
   const p = details.item || base;
   const run = from === 'results' ? app.lastRun : null;
   const showMatch = !!run && (!p.demo || run.ds === p.ds);
-  const m = matchProduct(p, showMatch ? run.crit : {});
+  const m = matchProduct(p, showMatch ? run.crit : {}, showMatch ? sizeSystem(run.ds, run.crit.gender) : null);
   const v = productView(p);
   const fav = app.favs[p.id];
   const soldOut = isSoldOut(p, fav);
