@@ -32,7 +32,7 @@
     }
     port.onMessage.addListener((msg) => reply({ ...msg, id: m.id }));
     port.onDisconnect.addListener(() => { if (chrome.runtime.lastError) reply({ pricel: 'error', id: m.id, error: 'расширение прервало запрос' }); });
-    port.postMessage({ type: m.pricel, store: m.store, query: m.query, url: m.url, urls: m.urls, limit: m.limit, force: m.force });
+    port.postMessage({ type: m.pricel, store: m.store, query: m.query, page: m.page, url: m.url, urls: m.urls, limit: m.limit, force: m.force });
   });
 
   // Сообщаем странице, что расширение есть (и отвечаем на hello, если страница загрузилась раньше).

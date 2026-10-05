@@ -3,7 +3,7 @@
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extRecheck, extSearch, extWatch, extensionVersion, versionAtLeast } from './extension.js';
 import { isSoldOut } from './product.js';
-import { BED_SIZE, CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
+import { BED_SIZE, CONFUSING_ADJ, browseQueries, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -18,6 +18,7 @@ export const NOEXT_ERROR = 'поиск в этом магазине идёт ч�
  * отдельными запросами: поиск магазина ищет товары со всеми словами сразу.
  */
 export function storeQueries(run) {
+  if (run.browse) return browseQueries(run).slice(0, 8);
   let q = ' ' + run.q + ' ';
   // \b в JS не работает с кириллицей, поэтому границы слов задаём явно.
   q = q.replace(/(^|[\s,])до\s*\d[\d\s]*(?:к|тыс\.?)?\s*(?:₽|руб\.?|р\.)?(?=[\s,]|$)/gi, ' ');
@@ -101,8 +102,9 @@ function recordPrices(items) {
 const extItem = (storeName) => (raw) => liveItem({ ...raw, store: storeName, id: idFor(storeName, raw.url) });
 
 /**
- * Поиск в одном магазине → { status: 'ok'|'blocked'|'empty'|'noext'|'error', items, error, searchUrl }.
- * onProgress получает промежуточные шаги расширения ({ stage, done, total, found }).
+ * Поиск в одном магазине — первая страница выдачи → { status: 'ok'|'blocked'|'empty'|'noext'|'error', items, error, searchUrl,
+ * pages: [{ q, next, total, found }] }. Следующие страницы — searchMore, по мере просмотра.
+ * onProgress получает промежуточные шаги расширения ({ stage, page }).
  */
 export async function searchOne(run, storeName, signal, index = 0, onProgress) {
   const store = storeByName(storeName);
@@ -111,30 +113,30 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const queries = storeQueries(run);
     const searchUrl = store.search + encodeURIComponent(queries[0]);
     if (!(await extensionVersion())) return { status: 'noext', items: [], error: NOEXT_ERROR, searchUrl };
+    // Первая страница каждого варианта запроса — одновременно, в соседних вкладках.
+    const rs = await Promise.all(queries.map((qq, i) => {
+      const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: qq });
+      return extSearch(store.id, qq, { onProgress: progress, signal, page: 1 })
+        .catch((e) => { if (e.name === 'AbortError') throw e; return { status: 'error', error: e.message }; });
+    }));
+    const brands = new Set(rs.flatMap((r) => r.brands || []));
+    const facetBrands = new Set(rs.flatMap((r) => r.facetBrands || []));
     const byUrl = new Map();
-    const brands = new Set();
-    const facetBrands = new Set();
-    const statuses = [];
-    for (let i = 0; i < queries.length; i++) {
-      try {
-        const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i] });
-        const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, limit: Math.floor(150 / queries.length) });
-        statuses.push(r);
-        for (const b of r.brands || []) brands.add(b);
-        for (const b of r.facetBrands || []) facetBrands.add(b);
-        for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
-      } catch (e) {
-        if (e.name === 'AbortError') throw e;
-        statuses.push({ status: 'error', error: e.message });
-      }
-    }
+    for (const r of rs) for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
     const items = [...byUrl.values()].map(extItem(storeName));
     recordPrices(items);
-    const ok = statuses.some((r) => r.status === 'ok');
-    const first = statuses.find((r) => r.status !== 'ok') || statuses[0] || {};
+    const ok = rs.some((r) => r.status === 'ok');
+    const first = rs.find((r) => r.status !== 'ok') || rs[0] || {};
+    // Есть ли у варианта запроса следующие страницы. Старое расширение (до 0.6) номера страницы не знает — у него всё сразу.
+    const pages = queries.map((qq, i) => {
+      const r = rs[i];
+      const total = r.page?.total || null;
+      const more = r.status === 'ok' && !!r.page && (total ? total > 1 : (r.items || []).length > 0);
+      return { q: qq, next: more ? 2 : null, total, found: r.page?.found || null };
+    });
     return {
       status: ok ? 'ok' : first.status || 'error', items, error: ok ? null : first.error || null,
-      searchUrl: statuses[0]?.searchUrl || searchUrl, queries, brands: [...brands], facetBrands: [...facetBrands],
+      searchUrl: rs[0]?.searchUrl || searchUrl, queries, pages, brands: [...brands], facetBrands: [...facetBrands],
     };
   }
   if (!isLive()) {
@@ -159,6 +161,45 @@ export function demoHistory(id, now = Date.now()) {
   today.setHours(12, 0, 0, 0);
   return priceHistory(p).map((price, i) => ({ t: today.getTime() - (HISTORY_DAYS - 1 - i) * DAY, price }));
 }
+
+/**
+ * Следующие страницы выдачи магазина: по одной для каждого варианта запроса, у которого они ещё есть.
+ * → обновлённый результат магазина (новые вещи добавлены в конец) или тот же, если страниц больше нет.
+ */
+export async function searchMore(storeName, res, signal) {
+  const store = storeByName(storeName);
+  const todo = (res.pages || []).filter((p) => p.next);
+  if (!store?.ext || !todo.length) return res;
+  const rs = await Promise.all(todo.map((p) => extSearch(store.id, p.q, { signal, page: p.next })
+    .catch((e) => { if (e.name === 'AbortError') throw e; return { status: 'error', error: e.message }; })));
+  const seen = new Set(res.items.map((x) => x.url));
+  const fresh = [];
+  const pages = res.pages.map((p) => {
+    const idx = todo.indexOf(p);
+    if (idx < 0) return p;
+    const r = rs[idx];
+    if (r.status !== 'ok') return { ...p, next: null, error: r.status === 'end' ? null : r.error || r.status };
+    let added = 0;
+    for (const x of r.items || []) {
+      if (!x.url || !x.price || !x.title || seen.has(x.url)) continue;
+      seen.add(x.url);
+      fresh.push(x);
+      added++;
+    }
+    const total = r.page?.total || p.total;
+    // Страница без новых вещей — магазин отдаёт то же самое: дальше не идём.
+    const next = added && (!total || p.next < total) ? p.next + 1 : null;
+    return { ...p, next, total, found: r.page?.found || p.found };
+  });
+  const items = fresh.map(extItem(storeName));
+  recordPrices(items);
+  return { ...res, items: [...res.items, ...items], pages };
+}
+
+/** Есть ли у магазина ещё страницы выдачи. */
+export const hasMore = (res) => !!res && res.status === 'ok' && (res.pages || []).some((p) => p.next);
+/** Сколько вещей по данным магазина (по самому большому варианту запроса). */
+export const storeFound = (res) => Math.max(0, ...(res?.pages || []).map((p) => p.found || 0));
 
 /** Подробности и история: для живого товара — со страницы магазина через сервер. */
 export async function fetchDetails(item, signal) {

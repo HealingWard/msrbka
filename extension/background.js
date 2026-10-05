@@ -1,6 +1,6 @@
 // Фоновая часть расширения «Отмерь».
-// По запросу сайта открывает поиск магазина в свёрнутом окне вашего браузера, читает выдачу,
-// затем открывает карточки найденных товаров (по 2 одновременно) и собирает размеры, цвет, бренд.
+// По запросу сайта открывает в свёрнутом окне вашего браузера нужную страницу выдачи магазина и читает её:
+// цены, размеры, цвет и бренд Stockmann и Lamoda отдают прямо в выдаче. Следующие страницы сайт просит по мере просмотра.
 // Если магазин спрашивает «вы не робот?», окно разворачивается, чтобы вы прошли проверку сами.
 
 const STORES = {
@@ -24,8 +24,6 @@ const STORES = {
   },
 };
 
-const DETAILS_LIMIT = 16;       // сколько карточек открывать ради размеров/цвета
-const DETAILS_PARALLEL = 2;     // одновременно открытых карточек на магазин
 const DETAILS_TTL = 12 * 3600e3; // кэш карточек
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -121,96 +119,96 @@ async function saveDetails(url, item) {
   await chrome.storage.local.set({ ['d2:' + url]: { t: Date.now(), item } });
 }
 
-function mergeDetails(item, d) {
-  if (!d) return item;
-  const out = { ...item };
-  for (const [k, v] of Object.entries(d)) {
-    if (k === 'url' || k === 'title') continue;
-    if (v != null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
-  }
-  if (!out.title && d.title) out.title = d.title;
-  // Акция с карточки важнее, чем её отсутствие в выдаче; но и «акции больше нет» с карточки — тоже правда.
-  if ('promo' in d) out.promo = d.promo;
-  out.detailed = true;
-  return out;
-}
 
 // ——— задачи ———
 
-async function searchJob(storeId, query, limit, send) {
+// Окно для поиска одно на все запросы и живёт 2 минуты после последнего: следующая страница
+// выдачи открывается в уже открытом окне — так быстрее.
+let shared = null; // { id, busy, timer }
+async function acquireWindow() {
+  if (shared) {
+    try { await chrome.windows.get(shared.id); } catch { shared = null; }
+  }
+  if (!shared) shared = { id: await openWindow(), busy: 0, timer: null };
+  clearTimeout(shared.timer);
+  shared.busy++;
+  return shared.id;
+}
+function releaseWindow() {
+  if (!shared) return;
+  shared.busy = Math.max(0, shared.busy - 1);
+  if (shared.busy) return;
+  const id = shared.id;
+  shared.timer = setTimeout(() => { if (shared && shared.id === id && !shared.busy) { shared = null; closeWindow(id); } }, 120000);
+}
+
+/**
+ * Одна страница выдачи магазина (page — номер страницы магазина, с 1). Сайт сам решает, когда нужна следующая:
+ * так первая страница появляется за секунды, а дальше страницы подгружаются по мере просмотра.
+ * Карточки вещей не открываем: размеры, цвет и бренд Stockmann и Lamoda отдают прямо в выдаче.
+ */
+// Не больше двух страниц выдачи одного магазина одновременно — чтобы не выглядеть роботом.
+const STORE_SLOTS = 2;
+const slots = {};
+async function takeSlot(storeId) {
+  const q = slots[storeId] || (slots[storeId] = { busy: 0, wait: [] });
+  if (q.busy >= STORE_SLOTS) await new Promise((r) => q.wait.push(r));
+  q.busy++;
+}
+function freeSlot(storeId) {
+  const q = slots[storeId];
+  if (!q) return;
+  q.busy--;
+  q.wait.shift()?.();
+}
+
+async function searchJob(storeId, query, page, send) {
   const s = STORES[storeId];
   if (!s) return send({ pricel: 'result', status: 'error', items: [], error: 'неизвестный магазин' });
   const searchUrl = s.search(query);
-  const win = await openWindow();
+  const n = Math.max(1, Math.floor(+page) || 1);
+  const opts = { linkPattern: s.linkPattern, host: s.host };
+  const human = () => send({ pricel: 'progress', stage: 'human' });
+  send({ pricel: 'progress', stage: 'queue', page: n });
+  await takeSlot(storeId);
+  const win = await acquireWindow();
   try {
-    send({ pricel: 'progress', stage: 'search' });
-    const r = await visit(win, searchUrl, 'search', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' }));
-    if (!r) return send({ pricel: 'result', status: 'error', items: [], error: 'страница не открылась', searchUrl });
+    send({ pricel: 'progress', stage: 'search', page: n });
+    let r = null;
+    if (n === 1) {
+      r = await visit(win, searchUrl, 'search', opts, human);
+    } else {
+      // Параметр номера страницы у магазина может быть разным — запоминаем тот, что сработал.
+      const k = 'pageParam:' + storeId;
+      const known = (await chrome.storage.local.get(k))[k];
+      const params = known ? [known, ...s.pageParams.filter((x) => x !== known)] : s.pageParams;
+      for (const p of params) {
+        let pr = null;
+        try { pr = await visit(win, s.page(query, n, p), 'search', opts, human); } catch { pr = null; }
+        r = pr;
+        if (!pr || pr.blocked || !pr.items?.length) continue;
+        if (pr.page?.current && pr.page.current !== n) { r = null; continue; } // магазин проигнорировал параметр
+        if (p !== known) await chrome.storage.local.set({ [k]: p });
+        break;
+      }
+    }
+    if (!r) return send({ pricel: 'result', status: n === 1 ? 'error' : 'end', items: [], error: 'страница не открылась', searchUrl });
     if (r.blocked) {
       const why = r.blocked === 'denied' ? 'магазин отклонил запрос' : 'проверка «не робот» не пройдена';
       return send({ pricel: 'result', status: 'blocked', items: [], error: why, searchUrl });
     }
-    if (!r.items.length) return send({ pricel: 'result', status: 'empty', items: [], error: 'на странице не нашлось товаров', searchUrl });
-
-    // Следующие страницы выдачи: пока есть новые товары и не набран лимит.
-    const max = limit || 150;
-    const seen = new Set(r.items.map((x) => x.url));
-    let all = r.items.slice();
-    let total = r.page?.total || null;
-    let param = null;
-    for (let n = 2; n <= (s.maxPages || 1) && all.length < max && (!total || n <= total); n++) {
-      send({ pricel: 'progress', stage: 'search', page: n, found: all.length, total: r.page?.found || null });
-      let fresh = null;
-      for (const p of param ? [param] : s.pageParams) {
-        await sleep(1200);
-        let pr = null;
-        try { pr = await visit(win, s.page(query, n, p), 'search', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { pr = null; }
-        if (!pr || pr.blocked || !pr.items?.length) continue;
-        // Магазин проигнорировал параметр и вернул первую страницу — пробуем другой.
-        if (pr.page?.current && pr.page.current !== n) continue;
-        const items = pr.items.filter((x) => !seen.has(x.url));
-        if (!items.length) continue;
-        param = p;
-        total = pr.page?.total || total;
-        fresh = items;
-        break;
-      }
-      if (!fresh) break;
-      fresh.forEach((x) => seen.add(x.url));
-      all = all.concat(fresh);
-    }
-    let items = all.slice(0, max);
-
-    // Карточки открываем только для товаров, по которым выдача не дала размеров
-    // (у Stockmann и Lamoda размеры, цвет и бренд обычно есть прямо в выдаче).
-    const need = items.filter((x) => !x.detailed).slice(0, DETAILS_LIMIT);
-    let done = 0;
-    send({ pricel: 'progress', stage: 'details', done, total: need.length, found: items.length });
-    const queue = [...need];
-    const worker = async () => {
-      while (queue.length) {
-        const it = queue.shift();
-        let d = await cachedDetails(it.url);
-        if (!d) {
-          try {
-            const pr = await visit(win, it.url, 'product', { linkPattern: s.linkPattern, host: s.host });
-            if (pr && pr.item) { d = pr.item; await saveDetails(it.url, d); }
-          } catch { /* карточка не открылась — оставляем данные из выдачи */ }
-          await sleep(700);
-        }
-        const i = items.indexOf(it);
-        if (i >= 0) items[i] = mergeDetails(it, d);
-        done++;
-        send({ pricel: 'progress', stage: 'details', done, total: need.length, found: items.length });
-      }
-    };
-    await Promise.all(Array.from({ length: DETAILS_PARALLEL }, worker));
-    items = items.map((x) => ({ ...x, store: s.name, storeId }));
-    send({ pricel: 'result', status: 'ok', items, searchUrl, brands: (r.brands || []).slice(0, 2000), facetBrands: (r.facetBrands || []).slice(0, 2000) });
+    if (!r.items?.length) return send({ pricel: 'result', status: n === 1 ? 'empty' : 'end', items: [], error: n === 1 ? 'на странице не нашлось товаров' : null, searchUrl });
+    const items = r.items.map((x) => ({ ...x, store: s.name, storeId }));
+    send({
+      pricel: 'result', status: 'ok', items, searchUrl,
+      page: { current: n, total: r.page?.total || null, found: r.page?.found || null },
+      brands: (r.brands || []).slice(0, 2000), facetBrands: (r.facetBrands || []).slice(0, 2000),
+    });
   } catch (e) {
     send({ pricel: 'result', status: 'error', items: [], error: String(e.message || e), searchUrl });
   } finally {
-    await closeWindow(win);
+    releaseWindow();
+    freeSlot(storeId);
   }
 }
 
@@ -534,7 +532,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => { alive = false; });
   const send = (m) => { if (alive) try { port.postMessage(m); } catch { alive = false; } };
   port.onMessage.addListener((m) => {
-    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.limit, send);
+    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.page, send);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
     else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
     else if (m.type === 'catbrands') catBrandsJob(!!m.force, send);

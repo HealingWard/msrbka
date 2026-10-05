@@ -20,26 +20,30 @@ export function extensionVersion(timeoutMs = 1200) {
   return ready;
 }
 
+/** Запрос к расширению. timeoutMs — сколько ждать без вестей: каждое сообщение о ходе работы продлевает ожидание. */
 function request(payload, { onProgress, signal, timeoutMs = 5 * 60000 } = {}) {
   return new Promise((resolve, reject) => {
     const id = 'r' + (++seq) + '-' + Date.now();
+    let t = null;
+    const arm = () => { clearTimeout(t); t = setTimeout(() => { cleanup(); reject(new Error('расширение не ответило вовремя')); }, timeoutMs); };
     const cleanup = () => { window.removeEventListener('message', on); clearTimeout(t); };
     const on = (e) => {
       const m = e.data;
       if (e.source !== window || !m || !m.pricelExt || m.id !== id) return;
-      if (m.pricel === 'progress') { onProgress?.(m); return; }
+      if (m.pricel === 'progress') { arm(); onProgress?.(m); return; }
       cleanup();
       if (m.pricel === 'error') reject(new Error(m.error));
       else resolve(m);
     };
-    const t = setTimeout(() => { cleanup(); reject(new Error('расширение не ответило вовремя')); }, timeoutMs);
+    arm();
     signal?.addEventListener('abort', () => { cleanup(); reject(new DOMException('aborted', 'AbortError')); });
     window.addEventListener('message', on);
     window.postMessage({ ...payload, id }, window.location.origin);
   });
 }
 
-export const extSearch = (store, query, opts = {}) => request({ pricel: 'search', store, query, limit: opts.limit || 150 }, opts);
+// page — номер страницы выдачи магазина (расширение 0.6+); старое расширение отдаёт сразу до limit вещей.
+export const extSearch = (store, query, opts = {}) => request({ pricel: 'search', store, query, page: opts.page || 1, limit: opts.limit || 150 }, opts);
 export const extDetails = (url, opts) => request({ pricel: 'details', url }, { ...opts, timeoutMs: 90000 });
 export const extCatBrands = (opts = {}) => request({ pricel: 'catbrands', force: !!opts.force }, { ...opts, timeoutMs: 6 * 60000 });
 export const extBrands = (store, opts = {}) => request({ pricel: 'brands', store, force: !!opts.force }, { ...opts, timeoutMs: 4 * 60000 });
