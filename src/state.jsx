@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { STORE_NAMES } from './data/catalog.js';
 import { usePersistentState } from './lib/storage.js';
-import { idbGet, idbSet } from './lib/idb.js';
 import { navigate } from './lib/router.js';
 import { runKey, runToParams } from './lib/search.js';
 import { isLive } from './lib/config.js';
@@ -56,20 +55,7 @@ export function AppProvider({ children }) {
   const [pending, setPending] = usePersistentState('pending', null, 'session');
   const [lastRun, setLastRun] = usePersistentState('lastRun', null, 'session');
   // Выдача по магазинам для последних поисков: key → { at, stores: { [магазин]: { status, items, error, searchUrl } } }
-  // Выдача может быть на тысячи вещей — храним её в IndexedDB (в sessionStorage помещается около 5 МБ).
-  // resultsReady — сохранённая выдача прочитана: до этого страница результатов не запускает поиск заново.
-  const [results, setResults] = useState({});
-  const [resultsReady, setResultsReady] = useState(false);
-  useEffect(() => {
-    try { sessionStorage.removeItem('pricel:results'); } catch { /* нет хранилища */ }
-    idbGet('results').then((v) => { if (v && typeof v === 'object') setResults((cur) => ({ ...v, ...cur })); })
-      .catch(() => {}).finally(() => setResultsReady(true));
-  }, []);
-  useEffect(() => {
-    if (!resultsReady) return undefined;
-    const t = setTimeout(() => { idbSet('results', results).catch(() => {}); }, 600);
-    return () => clearTimeout(t);
-  }, [results, resultsReady]);
+  const [results, setResults] = usePersistentState('results', {}, 'session');
   const [toast, setToast] = useState(null);
   // Бренды, которые встретились в фильтрах магазинов или добавлены вручную, — пополняют список выбора.
   const [learned, setLearned] = usePersistentState('brands', []);
@@ -154,7 +140,7 @@ export function AppProvider({ children }) {
     setSaved((list) => {
       const same = (s) => s.q === run.q && s.ds === run.ds;
       const prev = list.find(same);
-      const entry = { id: prev?.id || 'q' + Date.now(), q: run.q, ds: run.ds, stores: run.stores.slice(), crit: run.crit, last: now, ...(run.browse ? { browse: run.browse } : {}) };
+      const entry = { id: prev?.id || 'q' + Date.now(), q: run.q, ds: run.ds, stores: run.stores.slice(), crit: run.crit, last: now };
       return [entry, ...list.filter((s) => !same(s))].slice(0, 100);
     });
     // Новый запуск всегда ищет заново.
@@ -187,8 +173,8 @@ export function AppProvider({ children }) {
     const s = saved.find((x) => x.id === id);
     if (!s) return;
     setPref('selStores', s.stores.slice());
-    setQuery(s.browse ? '' : s.q);
-    runSearch({ q: s.q, ds: s.ds, stores: s.stores.slice(), crit: s.crit, ...(s.browse ? { browse: s.browse } : {}) });
+    setQuery(s.q);
+    runSearch({ q: s.q, ds: s.ds, stores: s.stores.slice(), crit: s.crit });
   }, [saved, setPref, setQuery, runSearch]);
 
   const saveSearch = useCallback((run) => {
@@ -296,10 +282,10 @@ export function AppProvider({ children }) {
   }, [setColls, setFavs]);
 
   const value = useMemo(() => ({
-    saved, favs, colls, prefs, query, pending, lastRun, results, resultsReady, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo,
+    saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
     runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, results, resultsReady, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
     setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

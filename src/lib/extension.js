@@ -20,36 +20,26 @@ export function extensionVersion(timeoutMs = 1200) {
   return ready;
 }
 
-/**
- * Запрос к расширению. timeoutMs — сколько ждать без вестей: каждое сообщение о ходе работы продлевает ожидание
- * (поиск по всей выдаче магазина может идти долго). stopSignal — «Остановить»: расширение отдаст найденное.
- * signal — отмена (ушли со страницы): расширение тоже прекращает работу.
- */
-function request(payload, { onProgress, signal, stopSignal, timeoutMs = 5 * 60000 } = {}) {
+function request(payload, { onProgress, signal, timeoutMs = 5 * 60000 } = {}) {
   return new Promise((resolve, reject) => {
     const id = 'r' + (++seq) + '-' + Date.now();
-    let t = null;
-    const arm = () => { clearTimeout(t); t = setTimeout(() => { cleanup(); reject(new Error('расширение не ответило вовремя')); }, timeoutMs); };
-    const stop = () => window.postMessage({ pricel: 'stop', id }, window.location.origin);
-    const cleanup = () => { window.removeEventListener('message', on); clearTimeout(t); stopSignal?.removeEventListener('abort', stop); };
+    const cleanup = () => { window.removeEventListener('message', on); clearTimeout(t); };
     const on = (e) => {
       const m = e.data;
       if (e.source !== window || !m || !m.pricelExt || m.id !== id) return;
-      if (m.pricel === 'progress') { arm(); onProgress?.(m); return; }
+      if (m.pricel === 'progress') { onProgress?.(m); return; }
       cleanup();
       if (m.pricel === 'error') reject(new Error(m.error));
       else resolve(m);
     };
-    arm();
-    signal?.addEventListener('abort', () => { stop(); cleanup(); reject(new DOMException('aborted', 'AbortError')); });
-    stopSignal?.addEventListener('abort', stop);
+    const t = setTimeout(() => { cleanup(); reject(new Error('расширение не ответило вовремя')); }, timeoutMs);
+    signal?.addEventListener('abort', () => { cleanup(); reject(new DOMException('aborted', 'AbortError')); });
     window.addEventListener('message', on);
     window.postMessage({ ...payload, id }, window.location.origin);
   });
 }
 
-// limit 0 — вся выдача магазина, до последней страницы.
-export const extSearch = (store, query, opts = {}) => request({ pricel: 'search', store, query, limit: opts.limit || 0 }, opts);
+export const extSearch = (store, query, opts = {}) => request({ pricel: 'search', store, query, limit: opts.limit || 150 }, opts);
 export const extDetails = (url, opts) => request({ pricel: 'details', url }, { ...opts, timeoutMs: 90000 });
 export const extCatBrands = (opts = {}) => request({ pricel: 'catbrands', force: !!opts.force }, { ...opts, timeoutMs: 6 * 60000 });
 export const extBrands = (store, opts = {}) => request({ pricel: 'brands', store, force: !!opts.force }, { ...opts, timeoutMs: 4 * 60000 });

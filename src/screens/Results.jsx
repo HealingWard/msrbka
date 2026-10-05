@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ALLSIZES, DS_CAT, HEX } from '../data/catalog.js';
 import { ddmm, fmt, plural, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
@@ -13,7 +13,6 @@ import { Badges, CheckRow, Segmented, Tape } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
-const PAGE = 60; // вещей на экране за раз — выдача бывает на тысячи вещей
 const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка', empty: 'вещи не распознаны', noext: 'нужно расширение' };
 const NOTE_PREFIX = { blocked: 'не удалось получить выдачу: ', empty: '', error: 'ошибка: ', noext: '' };
 
@@ -22,7 +21,7 @@ function progressText(p) {
   const pre = p.part ? '«' + p.query + '» ' + p.part + '/' + p.parts + ' · ' : '';
   if (p.stage === 'human') return pre + 'пройдите проверку «не робот» в окне браузера';
   if (p.stage === 'details') return pre + 'нашёл ' + p.found + ' · размеры ' + p.done + '/' + p.total;
-  if (p.stage === 'search' && p.page) return pre + 'страница ' + p.page + (p.pages ? ' из ' + p.pages : '') + ' · найдено ' + fmt(p.found) + (p.total > p.found ? ' из ~' + fmt(p.total) : '');
+  if (p.stage === 'search' && p.page) return pre + 'страница ' + p.page + ' · ' + p.found + (p.total ? ' из ' + p.total : '');
   return pre + 'открываю выдачу…';
 }
 // Доля готовности магазина для ленты-прогресса.
@@ -30,12 +29,11 @@ function storeShare(r, p) {
   if (r) return 1;
   if (!p) return 0.1;
   const part = p.parts ? (p.part - 1) / p.parts : 0;
-  const inPart = p.stage === 'details' && p.total ? 0.85 + (0.15 * p.done) / p.total
-    : p.stage === 'search' && p.page ? (p.pages ? 0.1 + (0.75 * p.page) / p.pages : Math.min(0.8, 0.15 + 0.05 * p.page)) : 0.1;
+  const inPart = p.stage === 'details' && p.total ? 0.5 + (0.5 * p.done) / p.total : p.stage === 'search' && p.page ? 0.15 + 0.05 * p.page : 0.15;
   return Math.min(0.95, part + inPart / (p.parts || 1));
 }
 
-function Loading({ run, entry, progress, onStop, stopping }) {
+function Loading({ run, entry, progress }) {
   const stores = entry?.stores || {};
   const share = run.stores.reduce((a, n) => a + storeShare(stores[n], progress[n]), 0) / run.stores.length;
   return (
@@ -55,12 +53,6 @@ function Loading({ run, entry, progress, onStop, stopping }) {
           );
         })}
       </div>
-      {onStop && (
-        <div style={{ marginTop: 24, display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-secondary" disabled={stopping} onClick={onStop}>{stopping ? 'Останавливаю…' : 'Остановить и показать найденное'}</button>
-          <span className="small muted">Ищу по всей выдаче магазина, страница за страницей: большая выдача может занять несколько минут.</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -123,9 +115,9 @@ function Filters({ base, ds, f, setF, open, onClose, shown }) {
       <div>
         <div className="label">Цена, ₽</div>
         <div className="price-in">
-          <input inputMode="numeric" aria-label="Цена от" value={f.min} placeholder={prices.length ? 'от ' + fmt(prices.reduce((a, b) => Math.min(a, b), Infinity)) : 'от'}
+          <input inputMode="numeric" aria-label="Цена от" value={f.min} placeholder={prices.length ? 'от ' + fmt(Math.min(...prices)) : 'от'}
             onChange={(e) => set('min', e.target.value.replace(/\D/g, ''))} />
-          <input inputMode="numeric" aria-label="Цена до" value={f.max} placeholder={prices.length ? 'до ' + fmt(prices.reduce((a, b) => Math.max(a, b), 0)) : 'до'}
+          <input inputMode="numeric" aria-label="Цена до" value={f.max} placeholder={prices.length ? 'до ' + fmt(Math.max(...prices)) : 'до'}
             onChange={(e) => set('max', e.target.value.replace(/\D/g, ''))} />
         </div>
       </div>
@@ -149,30 +141,20 @@ export function Results({ run }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [progress, setProgress] = useState({});
   const [showOther, setShowOther] = useState(false);
-  // Поиск без текста («Все вещи: …») тип вещи не ограничивает.
-  const types = useMemo(() => (run.browse ? [] : detectTypes(run.q)), [run.q, run.browse]);
+  const types = useMemo(() => detectTypes(run.q), [run.q]);
 
   const entry = app.results[key];
-  // Пока не прочитана сохранённая выдача, поиск не запускаем — иначе после перезагрузки искали бы заново.
-  const ready = app.resultsReady;
-  const missing = ready ? run.stores.filter((n) => !entry?.stores?.[n]) : run.stores;
-  const loading = !ready || missing.length > 0;
-  // «Остановить и показать найденное»: магазины отдают уже найденное.
-  const stopRef = useRef(null);
-  const [stopping, setStopping] = useState(false);
-  const [limit, setLimit] = useState(PAGE);
+  const missing = run.stores.filter((n) => !entry?.stores?.[n]);
+  const loading = missing.length > 0;
 
   // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
   const { setStoreResult, setLastRun, learnBrands, learnCatBrands } = app;
   const missingKey = missing.join('|');
   useEffect(() => {
-    if (!ready || !missingKey) return undefined;
+    if (!missingKey) return undefined;
     const ctrl = new AbortController();
-    const stopCtrl = new AbortController();
-    stopRef.current = stopCtrl;
-    setStopping(false);
     missingKey.split('|').forEach((name, i) => {
-      searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); }, stopCtrl.signal)
+      searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); })
         .then((res) => {
           if (ctrl.signal.aborted) return;
           if (res.brands && res.brands.length) learnBrands(res.brands);
@@ -186,9 +168,7 @@ export function Results({ run }) {
     return () => ctrl.abort();
     // missingKey меняется по мере ответов, но запрос уже в пути — перезапускать его не нужно.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, loading, ready]);
-  // Новая выдача, фильтры или сортировка — снова с первой порции.
-  useEffect(() => { setLimit(PAGE); }, [key, f, sort, showOther]);
+  }, [key, loading]);
 
   // Для страницы вещи запоминаем текущий поиск (в т.ч. открытый по ссылке).
   const sameRun = app.lastRun && runKey(app.lastRun) === key;
@@ -224,17 +204,14 @@ export function Results({ run }) {
     return out;
   }, [base, hist, at]);
 
-  if (loading) return <Loading run={run} entry={entry} progress={progress} stopping={stopping}
-    onStop={ready && missing.length ? () => { setStopping(true); stopRef.current?.abort(); } : null} />;
+  if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
   // «Ниже обычной» — только по нашей истории цены. Скидке магазина к «старой» цене не верим: её нельзя проверить.
   const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : Infinity);
   const canUsual = base.some(({ p }) => Number.isFinite(va(p)));
   const sortKey = sort === 'usual' && !canUsual ? 'match' : sort;
   const shown = sortKey === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;
-  const minP = shown.reduce((m, x) => Math.min(m, x.p.price), shown.length ? Infinity : 0);
-  const page = shown.slice(0, limit);
-  const partial = run.stores.filter((n) => entry.stores[n]?.partial).map((n) => ({ name: n, ...entry.stores[n] }));
+  const minP = shown.length ? Math.min(...shown.map((x) => x.p.price)) : 0;
   const bestId = shown.find((x) => x.p.price === minP)?.p.id;
 
   const checked = whenStr(entry.at);
@@ -257,7 +234,7 @@ export function Results({ run }) {
           <h1 className="h1">«{run.q.replace(/(\d) (\d)/g, '$1 $2')}»</h1>
           <div className="badges">
             <Badges items={criteriaChips(run.crit, run.stores, run.ds)} />
-            <button type="button" className="link small" style={{ marginLeft: 8, fontWeight: 600 }} onClick={() => { app.setQuery(run.browse ? '' : run.q); navigate('/'); }}>Изменить</button>
+            <button type="button" className="link small" style={{ marginLeft: 8, fontWeight: 600 }} onClick={() => { app.setQuery(run.q); navigate('/'); }}>Изменить</button>
             <button type="button" className="link small" style={{ fontWeight: 600 }} onClick={() => app.runSearch(run)}>Отмерить заново</button>
           </div>
         </div>
@@ -301,13 +278,6 @@ export function Results({ run }) {
               </div>
             );
           })}
-          {partial.map((r) => (
-            <div key={'partial-' + r.name} className="note" role="status">
-              <b>{r.name}</b>
-              <span>поиск остановлен: найдено {fmt((r.items || []).length)} {plural((r.items || []).length, THINGS)}{r.storeTotal > (r.items || []).length ? ' из примерно ' + fmt(r.storeTotal) + ' в магазине' : ''}.</span>
-              <button type="button" className="link push" onClick={() => app.runSearch(run)}>Искать заново целиком</button>
-            </div>
-          ))}
           {hidden > 0 && (
             <div className="note" role="status">
               <span>
@@ -323,7 +293,7 @@ export function Results({ run }) {
               <button type="button" className="btn btn-secondary flt-toggle" aria-expanded={filtersOpen} aria-controls="filters" onClick={() => setFiltersOpen(!filtersOpen)}>
                 <Icon name="sliders" size={16} />Фильтры{hasFilters(f) ? ' •' : ''}
               </button>
-              <div className="count">Подходят <b>{fmt(shown.length)}</b> из <span>{fmt(base.length)}</span></div>
+              <div className="count">Показано <b>{shown.length}</b> из <span>{base.length}</span></div>
             </div>
             <div className="toolbar-r">
               <Segmented label="Сортировка" options={canUsual ? SORTS : SORTS.filter(([k]) => k !== 'usual')} value={sortKey} onChange={setSort} />
@@ -337,7 +307,7 @@ export function Results({ run }) {
               <div className="ruler mini" aria-hidden="true" />
               <div className="h1">Семь раз отмерь — один раз купи.</div>
               <div className="muted">{failed.length === run.stores.length ? 'Ни один магазин не ответил.' : 'В выбранных магазинах ничего не нашлось под этот запрос.'}</div>
-              <button type="button" className="btn btn-primary" onClick={() => { app.setQuery(run.browse ? '' : run.q); navigate('/'); }}>Изменить запрос</button>
+              <button type="button" className="btn btn-primary" onClick={() => { app.setQuery(run.q); navigate('/'); }}>Изменить запрос</button>
             </div>
           )}
           {!!base.length && !shown.length && (
@@ -350,7 +320,7 @@ export function Results({ run }) {
           )}
           {!!shown.length && view === 'grid' && (
             <div className="cards">
-              {page.map(({ p, m }) => (
+              {shown.map(({ p, m }) => (
                 <ProductCard key={p.id} p={p} m={m} s={stat[p.id]} best={p.id === bestId} checked={checked} label={label(p)}
                   fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p)} />
               ))}
@@ -358,26 +328,15 @@ export function Results({ run }) {
           )}
           {!!shown.length && view === 'board' && (
             <div className="board">
-              {page.map(({ p }, i) => (
+              {shown.map(({ p }, i) => (
                 <BoardCard key={p.id} i={i} p={p} s={stat[p.id]} best={p.id === bestId} label={label(p)}
                   fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p)} />
               ))}
             </div>
           )}
           {!!shown.length && view === 'table' && (
-            <ResultsTable rows={page.map((x) => ({ ...x, s: stat[x.p.id], best: x.p.id === bestId }))} dark={dark} favs={app.favs}
+            <ResultsTable rows={shown.map((x) => ({ ...x, s: stat[x.p.id], best: x.p.id === bestId }))} dark={dark} favs={app.favs}
               checked={checked} onOpen={open} onFav={(p) => app.toggleFav(p)} />
-          )}
-          {shown.length > page.length && (
-            <div className="more-row">
-              <button type="button" className="btn btn-secondary" onClick={() => setLimit((n) => n + PAGE)}>
-                Показать ещё {Math.min(PAGE, shown.length - page.length)}
-              </button>
-              {shown.length - page.length > PAGE && (
-                <button type="button" className="link small" onClick={() => setLimit(shown.length)}>Показать все {fmt(shown.length)}</button>
-              )}
-              <span className="small muted">показано {fmt(page.length)} из {fmt(shown.length)}</span>
-            </div>
           )}
         </section>
       </div>

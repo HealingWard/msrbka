@@ -547,7 +547,7 @@
       }, opts.timeoutMs || 25000);
       if (ready && ready.blocked) return { blocked: ready.blocked, items: [], url: location.href, title: document.title };
       const exact = storeExtract('search');
-      if (exact && exact.length) return { blocked: null, items: opts.brandsOnly ? [] : opts.noInline ? exact : await inlineImages(exact), page: lastPage, brands: lastBrands, facetBrands: lastFacetBrands, source: 'store', url: location.href, title: document.title };
+      if (exact && exact.length) return { blocked: null, items: opts.brandsOnly ? [] : await inlineImages(exact), page: lastPage, brands: lastBrands, facetBrands: lastFacetBrands, source: 'store', url: location.href, title: document.title };
       await sleep(800); // даём догрузиться ценам и картинкам
       window.scrollTo(0, document.body.scrollHeight / 2);
       await sleep(400);

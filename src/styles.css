@@ -597,7 +597,6 @@ main.main { flex: 1; }
 }
 .lrow:last-child { border-bottom: none; }
 .auto-line { margin-top: 4px; color: var(--muted); }
-.more-row { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 32px 0 8px; }
 .auto-line a { color: var(--ink); }
 .lrow.back { animation: lrow-back 1.6s ease-out; }
 @keyframes lrow-back { from { background: var(--soft); } to { background: transparent; } }

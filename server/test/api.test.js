@@ -117,13 +117,3 @@ test('POST /api/record: цены из расширения попадают в �
     assert.equal((await post('/api/record', '{bad')).status, 400);
   });
 });
-
-test('POST /api/histories: история большой выдачи одним запросом', async () => {
-  await withServer(async (_get, history, post) => {
-    history.record({ id: 'stockmann:1', price: 1000 }, Date.now());
-    const ids = ['stockmann:1', ...Array.from({ length: 3000 }, (_, i) => 'lamoda:X' + i)];
-    const r = await post('/api/histories', { ids });
-    assert.equal(r.status, 200);
-    assert.deepEqual(Object.keys(r.body), ['stockmann:1']);
-  });
-});

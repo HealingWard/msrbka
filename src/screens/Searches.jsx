@@ -25,7 +25,7 @@ export function Searches() {
           const pool = isLive()
             ? (cached ? x.stores.flatMap((n) => cached.stores[n]?.items || []) : null)
             : DEMO_ITEMS.filter((p) => p.ds === x.ds && x.stores.includes(p.store));
-          const found = pool ? getResults(pool, x.crit, emptyFilters(), 'match', { types: x.browse ? [] : detectTypes(x.q) }).base.map((b) => b.p) : null;
+          const found = pool ? getResults(pool, x.crit, emptyFilters(), 'match', { types: detectTypes(x.q) }).base.map((b) => b.p) : null;
           const meta = ['Последний раз ' + whenStr(x.last)];
           if (found) meta.push(found.length + ' ' + plural(found.length, ['вещь', 'вещи', 'вещей']));
           if (found && found.length) meta.push('от ' + rub(Math.min(...found.map((p) => p.price))));
