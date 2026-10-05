@@ -1,4 +1,4 @@
-import { NEAR, STORE_NAMES, allBrands, brandKey } from '../data/catalog.js';
+import { CATS, NEAR, STORE_NAMES, allBrands, brandKey } from '../data/catalog.js';
 import { cap, rub } from './format.js';
 
 export const colorList = (c) => [].concat(c || []);
@@ -276,12 +276,10 @@ export function sizeNear(a, b) {
 export const emptyFilters = () => ({ stores: [], brands: [], sizes: [], colors: [], min: '', max: '' });
 export const hasFilters = (f) => !!(f.stores.length || f.brands.length || f.sizes.length || f.colors.length || f.min || f.max);
 
-const discount = (p) => (p.old ? 1 - p.price / p.old : 0);
 const SORTERS = {
   match: (x, y) => y.m.score - x.m.score || x.p.price - y.p.price,
   priceAsc: (x, y) => x.p.price - y.p.price,
   priceDesc: (x, y) => y.p.price - x.p.price,
-  discount: (x, y) => discount(y.p) - discount(x.p),
 };
 
 // ——— Тип товара ———
@@ -410,9 +408,44 @@ export function criteriaChips(c, stores, ds) {
 // ——— Сериализация поиска в URL, чтобы выдачу можно было обновить и отправить ссылкой ———
 
 const SEP = '|';
+/**
+ * Поиск без текста — вся выдача магазина по разделам: выбранные категории, «Для кого» и бренды.
+ * → run для runSearch или null, если не выбрано ни категорий, ни брендов.
+ */
+const BROWSE_WORD = { 'Одежда': ['одежда', 'одежда'], 'Обувь': ['обувь', 'обувь'], 'Аксессуары': ['аксессуары', 'аксессуары'], 'Товары для дома': ['товары для дома', 'товары для дома'] };
+export function browseRun({ cats = [], brands = [], gender = null, stores = [] }) {
+  const c = CATS.filter((x) => cats.includes(x));
+  if (!c.length && !brands.length) return null;
+  const who = GENDER_LABEL[gender] ? ', ' + GENDER_LABEL[gender] : '';
+  const catText = c.length ? c.map((x) => x.toLowerCase()).join(', ') : '';
+  const what = brands.length ? brands.join(', ') + (catText && c.length < CATS.length ? ' — ' + catText : '') : catText;
+  const ds = c.length === 1 ? { 'Одежда': 'trench', 'Обувь': 'shoes', 'Аксессуары': 'acc', 'Товары для дома': 'home' }[c[0]] : 'other';
+  return {
+    q: 'Все вещи: ' + what + who, ds, stores: stores.slice(), browse: { cats: c },
+    crit: { brands: brands.slice(), size: null, color: null, budget: null, ...(gender && GENDER_LABEL[gender] ? { gender } : {}) },
+  };
+}
+/** Запросы к магазину для поиска без текста: «женская обувь», «Furla женские аксессуары»… */
+export function browseQueries(run) {
+  const GW = { women: ['женская', 'женские'], men: ['мужская', 'мужские'], kids: ['детская', 'детские'], girls: ['для девочек', 'для девочек'], boys: ['для мальчиков', 'для мальчиков'] };
+  const g = GW[run.crit.gender];
+  const cats = run.browse?.cats?.length ? run.browse.cats : [];
+  const catQ = cats.map((c) => {
+    if (c === 'Товары для дома' || !g) return BROWSE_WORD[c][0];
+    const [sg, pl] = g;
+    return c === 'Аксессуары' ? (pl.startsWith('для') ? 'аксессуары ' + pl : pl + ' аксессуары') : sg.startsWith('для') ? BROWSE_WORD[c][0] + ' ' + sg : sg + ' ' + BROWSE_WORD[c][0];
+  });
+  const brands = run.crit.brands || [];
+  if (!brands.length) return catQ;
+  // Бренд по разделам; все четыре раздела — просто бренд (магазин сам покажет всё).
+  if (!catQ.length || cats.length === CATS.length) return brands.map((b) => (g && !cats.includes('Товары для дома') ? b + ' ' + g[1] : b));
+  return brands.flatMap((b) => catQ.map((q) => b + ' ' + q));
+}
+
 export function runToParams(run) {
   const sp = new URLSearchParams();
   sp.set('q', run.q);
+  if (run.browse) sp.set('browse', run.browse.cats.join(SEP) || '*');
   sp.set('ds', run.ds);
   sp.set('stores', run.stores.join(SEP));
   if (run.crit.brands.length) sp.set('brands', run.crit.brands.join(SEP));
@@ -432,6 +465,7 @@ export function runFromParams(sp) {
   const budget = +(sp.get('budget') || '').replace(/\D/g, '') || null;
   return {
     q,
+    ...(sp.has('browse') ? { browse: { cats: list('browse').filter((c) => CATS.includes(c)) } } : {}),
     ds: ['shoes', 'acc', 'home', 'other'].includes(sp.get('ds')) ? sp.get('ds') : 'trench',
     stores,
     crit: {

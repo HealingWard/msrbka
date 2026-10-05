@@ -4,7 +4,7 @@ import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { detectTypes } from '../lib/search.js';
 import { priceAt } from '../lib/history.js';
-import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
+import { changeBadge, changePct, goalProgress, itemStatus, priceSignal } from '../lib/pricing.js';
 import { useHistories, withAdded } from '../lib/useHistories.js';
 import { startSearch } from '../lib/startSearch.js';
 import { isLive } from '../lib/config.js';
@@ -26,15 +26,18 @@ function useFollowRows(app) {
   const hist = useHistories(entries.map((x) => x.item));
   return entries.map(({ id, fv, item }) => {
     const pts = withAdded(hist(item, fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined), fv);
-    const st = priceStats(pts, 90);
+    const sig = priceSignal(pts);
     const cur = item.price;
     const was = fv.priceAtAdd || priceAt(pts, new Date(fv.addedAt).getTime()) || cur;
     const tg = fv.target || null;
-    return { id, item, cur, was, tg, st, soldOut: isSoldOut(item, fv), dl: changePct(cur, was), status: itemStatus(cur, tg, st), prog: goalProgress(was, cur, tg) };
+    return { id, item, cur, was, tg, sig, soldOut: isSoldOut(item, fv), dl: changePct(cur, was), status: itemStatus(cur, tg, sig), prog: goalProgress(was, cur, tg) };
   });
 }
 
-/** Находки дня: вещи из последних поисков (не из списков), которые сильнее всего ниже обычной цены. */
+/**
+ * Находки дня: вещи из последних поисков (не из списков), которые сильнее всего ниже обычной цены.
+ * Только по нашей собственной истории цен: скидке магазина к «старой» цене не верим — её нельзя проверить.
+ */
 function useFinds(app) {
   const pool = useMemo(() => {
     const seen = new Set();
@@ -52,11 +55,9 @@ function useFinds(app) {
   return pool
     .filter((p) => !app.favs[p.id])
     .map((p) => {
-      const st = priceStats(hist(p), 90);
-      if (st && st.known) return { p, score: st.va, badge: deltaBadge(st.va) };
-      // История ещё копится — берём скидку магазина к старой цене.
-      if (p.old && p.old > p.price) { const d = -Math.round((1 - p.price / p.old) * 100); return { p, score: d, badge: deltaBadge(d) }; }
-      return null;
+      // Находка — только хорошая или отличная цена по нашей истории (на 15 %+ ниже обычной).
+      const sig = priceSignal(hist(p));
+      return sig && (sig.level === 'excellent' || sig.level === 'good') ? { p, score: sig.pct, badge: changeBadge(sig) } : null;
     })
     .filter((x) => x && x.score < 0)
     .sort((a, b) => a.score - b.score)
@@ -113,7 +114,7 @@ export function Home() {
           {GENDERS.map(([k, l]) => <Chip key={k} on={(prefs.gender || 'any') === k} onClick={() => setPref('gender', k)}>{l}</Chip>)}
         </div>
         <div className="small home-hint">
-          {selStores.length ? 'Ищем в: ' + selStores.join(', ') + '. Enter — найти.' : 'Отметьте магазины — или спрошу после запроса.'}
+          {selStores.length ? 'Ищем в: ' + selStores.join(', ') + '. Enter — найти. Пустая строка — все вещи выбранных категорий.' : 'Отметьте магазины — или спрошу после запроса.'}
           {isLive() && <> Stockmann и Lamoda — через <a href="#/extension">расширение для Chrome</a>.</>}
         </div>
       </div>
@@ -130,10 +131,10 @@ export function Home() {
           <div className="blk-rows">
             {pora.slice(0, 3).map((r) => {
               const reached = r.tg && r.cur <= r.tg;
-              const n = reached ? r.dl : r.st?.va || 0;
+              const n = reached ? r.dl : r.sig?.pct || 0;
               const kind = kindOf(r.item);
               const what = (kind ? cap(kind) + ' ' : '') + (r.item.brand || (kind ? '' : r.item.title)) + ' в ' + r.item.store;
-              const ctx = reached ? 'цель ' + rub(r.tg) + ' достигнута' : r.st?.isMin ? 'минимум за 90 дней' : 'ниже обычной цены';
+              const ctx = reached ? 'цель ' + rub(r.tg) + ' достигнута' : 'отличная цена — обычная ' + rub(Math.round(r.sig.usual / 10) * 10);
               return (
                 <div key={r.id} className="blk-row">
                   <b style={{ fontWeight: 600 }}>{what.trim()}</b>: <span className={'chg-inline ' + (n < 0 ? 'drop' : n > 0 ? 'rise' : '')}>{pct(n)}</span>, {ctx}.{' '}
@@ -183,7 +184,7 @@ export function Home() {
             ))}
             {!finds.length && (
               <div className="find" style={{ cursor: 'default', color: 'var(--on-moss-2)', fontSize: 15 }}>
-                Здесь появятся вещи из ваших поисков, которые сейчас дешевле обычного.
+                Здесь появятся вещи из ваших поисков, которые сейчас дешевле обычного — по истории цен, которую копит «Отмерь» (нужна неделя наблюдений). Скидкам магазинов на слово не верим.
               </div>
             )}
           </div>

@@ -596,6 +596,14 @@ main.main { flex: 1; }
   gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); align-items: center; font-size: 14px; line-height: 20px;
 }
 .lrow:last-child { border-bottom: none; }
+.more-row { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 32px 0 8px; }
+.pager { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 40px 0 8px; }
+.pager .pg { min-width: 40px; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--ink); font-family: var(--mono); font-size: 14px; cursor: pointer; }
+.pager .pg:hover:not(:disabled) { border-color: var(--ink); }
+.pager .pg.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.pager .pg:disabled { opacity: .35; cursor: default; }
+.pager .pg-gap { padding: 0 4px; color: var(--muted); }
+.pager .small { margin-left: 8px; }
 .auto-line { margin-top: 4px; color: var(--muted); }
 .auto-line a { color: var(--ink); }
 .lrow.back { animation: lrow-back 1.6s ease-out; }

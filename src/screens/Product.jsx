@@ -6,7 +6,7 @@ import { priceAt } from '../lib/history.js';
 import { isSoldOut, productView } from '../lib/product.js';
 import { GLYPH, matchProduct, runToParams } from '../lib/search.js';
 import { fetchDetails } from '../lib/source.js';
-import { changeBadge, changePct, goalProgress, priceStats } from '../lib/pricing.js';
+import { SIGNAL, changeBadge, changePct, goalProgress, priceSignal } from '../lib/pricing.js';
 import { withAdded, withCurrent } from '../lib/useHistories.js';
 import { PriceChart } from '../components/PriceChart.jsx';
 import { Icon } from '../components/Icon.jsx';
@@ -64,7 +64,7 @@ export function Product({ id, from }) {
   const want = showMatch ? run.crit.size : null;
   const checkedIso = details.checkedAt || fav?.checkedAt || run?.at;
   const points = withAdded(withCurrent(details.history, p.price, Date.now()), app.favs[p.id]);
-  const st90 = priceStats(points, 90);
+  const sig = priceSignal(points);
   const images = p.images && p.images.length ? p.images : p.image ? [p.image] : [];
   const sizeList = p.demo
     ? ALLSIZES[p.ds].map((z) => ({ z, av: p.sizes.includes(z) }))
@@ -84,7 +84,7 @@ export function Product({ id, from }) {
     follow = { since: dateLong(addedAt), was, dl, prog: goalProgress(was, p.price, target) };
   }
   const sugs = [
-    ...(st90 && st90.known ? [['Минимум за 90 дней', st90.mn], ['Нижняя граница обычной', st90.p25]] : []),
+    ...(sig && sig.known ? [['Отличная цена (−30 % к обычной)', Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100], ['Минимум за 90 дней', sig.min90]] : []),
     ['−10 % от текущей', Math.floor((p.price * 0.9) / 100) * 100],
   ].filter(([, x], i, a) => a.findIndex(([, y]) => y === x) === i);
   const saveGoal = () => {
@@ -128,8 +128,7 @@ export function Product({ id, from }) {
 
           <div className="big-price">
             <span className="price">{v.priceStr}</span>
-            {v.hasOld && <span className="old">{v.oldStr}</span>}
-            <PriceChange badge={changeBadge(st90)} title="к обычной цене за 90 дней" />
+            <PriceChange badge={changeBadge(sig)} title="к обычной цене по нашей истории" />
             <PromoTag promo={p.promo} />
           </div>
           {soldOut && (

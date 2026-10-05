@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ALLSIZES, DS_CAT, HEX } from '../data/catalog.js';
 import { ddmm, fmt, plural, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
-import { searchOne } from '../lib/source.js';
-import { changeBadge, priceStats, sparkline } from '../lib/pricing.js';
+import { hasMore, searchMore, searchOne, storeFound } from '../lib/source.js';
+import { changeBadge, priceSignal, sparkline } from '../lib/pricing.js';
 import { useHistories } from '../lib/useHistories.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { BoardCard, ProductCard, ResultsTable } from '../components/ProductCard.jsx';
@@ -13,6 +13,8 @@ import { Badges, CheckRow, Segmented, Tape } from '../components/ui.jsx';
 import { useApp } from '../state.jsx';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
+const PAGE = 60;      // вещей на нашей странице
+const MAX_ROUNDS = 5; // сколько раз подряд брать следующую страницу магазина, чтобы набрать нашу страницу
 const STATUS_TEXT = { blocked: 'магазин не пустил', error: 'ошибка', empty: 'вещи не распознаны', noext: 'нужно расширение' };
 const NOTE_PREFIX = { blocked: 'не удалось получить выдачу: ', empty: '', error: 'ошибка: ', noext: '' };
 
@@ -128,7 +130,8 @@ function Filters({ base, ds, f, setF, open, onClose, shown }) {
   );
 }
 
-const SORTS = [['match', 'По соответствию'], ['priceAsc', 'Дешевле'], ['priceDesc', 'Дороже'], ['usual', 'Ниже обычной']];
+// «Ниже обычной» в поиске нет: у большинства найденных вещей нашей истории цен ещё нет.
+const SORTS = [['match', 'По соответствию'], ['priceAsc', 'Дешевле'], ['priceDesc', 'Дороже']];
 const VIEWS = [['grid', 'Карточки'], ['table', 'Таблица'], ['board', 'Доска']];
 const THEMES = [[false, 'Светлая'], [true, 'Тёмная']];
 
@@ -141,17 +144,20 @@ export function Results({ run }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [progress, setProgress] = useState({});
   const [showOther, setShowOther] = useState(false);
-  const types = useMemo(() => detectTypes(run.q), [run.q]);
+  // Поиск без текста («Все вещи: …») тип вещи не ограничивает.
+  const types = useMemo(() => (run.browse ? [] : detectTypes(run.q)), [run.q, run.browse]);
 
   const entry = app.results[key];
-  const missing = run.stores.filter((n) => !entry?.stores?.[n]);
-  const loading = missing.length > 0;
+  // Пока не прочитана сохранённая выдача, поиск не запускаем — иначе после перезагрузки искали бы заново.
+  const ready = app.resultsReady;
+  const missing = ready ? run.stores.filter((n) => !entry?.stores?.[n]) : run.stores;
+  const loading = !ready || missing.length > 0;
 
   // Запрашиваем магазины, по которым ещё нет ответа; каждый ответ сразу появляется на экране загрузки.
   const { setStoreResult, setLastRun, learnBrands, learnCatBrands } = app;
   const missingKey = missing.join('|');
   useEffect(() => {
-    if (!missingKey) return undefined;
+    if (!ready || !missingKey) return undefined;
     const ctrl = new AbortController();
     missingKey.split('|').forEach((name, i) => {
       searchOne(run, name, ctrl.signal, i, (p) => { if (!ctrl.signal.aborted) setProgress((st) => ({ ...st, [name]: p })); })
@@ -168,7 +174,7 @@ export function Results({ run }) {
     return () => ctrl.abort();
     // missingKey меняется по мере ответов, но запрос уже в пути — перезапускать его не нужно.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, loading]);
+  }, [key, loading, ready]);
 
   // Для страницы вещи запоминаем текущий поиск (в т.ч. открытый по ссылке).
   const sameRun = app.lastRun && runKey(app.lastRun) === key;
@@ -185,11 +191,38 @@ export function Results({ run }) {
   }, [filtersOpen]);
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
-  const baseSort = sort === 'usual' ? 'match' : sort;
   const { base, list, hidden, hiddenWhy } = useMemo(
-    () => getResults(items, run.crit, f, baseSort, { types, showOther }),
-    [items, run.crit, f, baseSort, types, showOther],
+    () => getResults(items, run.crit, f, sort, { types, showOther }),
+    [items, run.crit, f, sort, types, showOther],
   );
+
+  // Страницы, как в магазине: по 60 вещей. Следующую страницу магазина берём заранее, пока смотрите текущую;
+  // если после фильтров подходящих не хватает — добираем ещё страницы магазина (не больше MAX_ROUNDS подряд).
+  const [pg, setPg] = useState(1);
+  const [more, setMore] = useState({ busy: false, rounds: 0 });
+  const moreCtrl = useRef(null);
+  useEffect(() => { setPg(1); }, [key, f, sort, showOther]);
+  useEffect(() => { setMore((m) => (m.busy ? m : { busy: false, rounds: 0 })); }, [pg, key, f, showOther]);
+  useEffect(() => () => moreCtrl.current?.abort(), [key]);
+  const withMore = loading ? [] : run.stores.filter((n) => hasMore(entry.stores[n]));
+  const canMore = withMore.length > 0;
+  const want = !loading && canMore && !more.busy && more.rounds < MAX_ROUNDS && list.length < (pg + 1) * PAGE;
+  useEffect(() => {
+    if (!want) return;
+    const ctrl = new AbortController();
+    moreCtrl.current = ctrl;
+    setMore((m) => ({ busy: true, rounds: m.rounds + 1 }));
+    Promise.all(withMore.map((n) => searchMore(n, entry.stores[n], ctrl.signal).then((res) => { if (!ctrl.signal.aborted) setStoreResult(key, n, res); })))
+      .catch(() => {})
+      .finally(() => { if (!ctrl.signal.aborted) setMore((m) => ({ ...m, busy: false })); });
+    // Запрос не отменяем, когда меняется выдача: он сам допишет страницу.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [want]);
+  // Магазины отдали всё, а страница дальше последней — возвращаемся на последнюю.
+  useEffect(() => {
+    const total = Math.max(1, Math.ceil(list.length / PAGE));
+    if (!loading && !canMore && !more.busy && pg > total) setPg(total);
+  }, [loading, canMore, more.busy, pg, list.length]);
 
   // История цены каждой вещи: бейдж «к обычной» и спарклайн за 30 дней.
   const at = entry?.at ? new Date(entry.at).getTime() : Date.now();
@@ -198,20 +231,22 @@ export function Results({ run }) {
     const out = {};
     for (const { p } of base) {
       const pts = hist(p, at);
-      const st = priceStats(pts, 90);
-      out[p.id] = { st, badge: changeBadge(st), spark: sparkline(pts) };
+      const sig = priceSignal(pts, at);
+      out[p.id] = { sig, badge: changeBadge(sig), spark: sparkline(pts) };
     }
     return out;
   }, [base, hist, at]);
 
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
-  // «Ниже обычной»: по истории цены; пока истории нет — по скидке магазина к старой цене.
-  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : p.old > p.price ? -Math.round((1 - p.price / p.old) * 100) : Infinity);
-  const canUsual = base.some(({ p }) => Number.isFinite(va(p)));
-  const sortKey = sort === 'usual' && !canUsual ? 'match' : sort;
-  const shown = sortKey === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;
-  const minP = shown.length ? Math.min(...shown.map((x) => x.p.price)) : 0;
+  // «Ниже обычной» — только по нашей истории цены. Скидке магазина к «старой» цене не верим: её нельзя проверить.
+  const shown = list;
+  const pages = Math.max(1, Math.ceil(list.length / PAGE));
+  const page = list.slice((pg - 1) * PAGE, pg * PAGE);
+  const waiting = pg > 1 && !page.length && (canMore || more.busy); // перешли на страницу, которую ещё добираем
+  const minP = shown.reduce((m, x) => Math.min(m, x.p.price), shown.length ? Infinity : 0);
+  const found = run.stores.reduce((a, n) => a + storeFound(entry.stores[n]), 0);
+  const goPage = (n) => { setPg(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const bestId = shown.find((x) => x.p.price === minP)?.p.id;
 
   const checked = whenStr(entry.at);
@@ -234,7 +269,7 @@ export function Results({ run }) {
           <h1 className="h1">«{run.q.replace(/(\d) (\d)/g, '$1 $2')}»</h1>
           <div className="badges">
             <Badges items={criteriaChips(run.crit, run.stores, run.ds)} />
-            <button type="button" className="link small" style={{ marginLeft: 8, fontWeight: 600 }} onClick={() => { app.setQuery(run.q); navigate('/'); }}>Изменить</button>
+            <button type="button" className="link small" style={{ marginLeft: 8, fontWeight: 600 }} onClick={() => { app.setQuery(run.browse ? '' : run.q); navigate('/'); }}>Изменить</button>
             <button type="button" className="link small" style={{ fontWeight: 600 }} onClick={() => app.runSearch(run)}>Отмерить заново</button>
           </div>
         </div>
@@ -293,10 +328,12 @@ export function Results({ run }) {
               <button type="button" className="btn btn-secondary flt-toggle" aria-expanded={filtersOpen} aria-controls="filters" onClick={() => setFiltersOpen(!filtersOpen)}>
                 <Icon name="sliders" size={16} />Фильтры{hasFilters(f) ? ' •' : ''}
               </button>
-              <div className="count">Показано <b>{shown.length}</b> из <span>{base.length}</span></div>
+              <div className="count">
+                Подходят <b>{fmt(shown.length)}</b>{canMore ? ' из загруженных ' + fmt(base.length) : ' из ' + fmt(base.length)}{found > base.length ? ' · в магазинах ~' + fmt(found) : ''}
+              </div>
             </div>
             <div className="toolbar-r">
-              <Segmented label="Сортировка" options={canUsual ? SORTS : SORTS.filter(([k]) => k !== 'usual')} value={sortKey} onChange={setSort} />
+              <Segmented label="Сортировка" options={SORTS} value={sort} onChange={setSort} />
               <Segmented label="Вид" options={VIEWS} value={view} onChange={(v) => app.setPref('view', v)} />
               {view === 'table' && <Segmented label="Тема таблицы" options={THEMES} value={dark} onChange={(v) => app.setPref('tableDark', v)} />}
             </div>
@@ -307,7 +344,7 @@ export function Results({ run }) {
               <div className="ruler mini" aria-hidden="true" />
               <div className="h1">Семь раз отмерь — один раз купи.</div>
               <div className="muted">{failed.length === run.stores.length ? 'Ни один магазин не ответил.' : 'В выбранных магазинах ничего не нашлось под этот запрос.'}</div>
-              <button type="button" className="btn btn-primary" onClick={() => { app.setQuery(run.q); navigate('/'); }}>Изменить запрос</button>
+              <button type="button" className="btn btn-primary" onClick={() => { app.setQuery(run.browse ? '' : run.q); navigate('/'); }}>Изменить запрос</button>
             </div>
           )}
           {!!base.length && !shown.length && (
@@ -320,7 +357,7 @@ export function Results({ run }) {
           )}
           {!!shown.length && view === 'grid' && (
             <div className="cards">
-              {shown.map(({ p, m }) => (
+              {page.map(({ p, m }) => (
                 <ProductCard key={p.id} p={p} m={m} s={stat[p.id]} best={p.id === bestId} checked={checked} label={label(p)}
                   fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p)} />
               ))}
@@ -328,15 +365,32 @@ export function Results({ run }) {
           )}
           {!!shown.length && view === 'board' && (
             <div className="board">
-              {shown.map(({ p }, i) => (
+              {page.map(({ p }, i) => (
                 <BoardCard key={p.id} i={i} p={p} s={stat[p.id]} best={p.id === bestId} label={label(p)}
                   fav={!!app.favs[p.id]} onOpen={() => open(p.id)} onFav={() => app.toggleFav(p)} />
               ))}
             </div>
           )}
           {!!shown.length && view === 'table' && (
-            <ResultsTable rows={shown.map((x) => ({ ...x, s: stat[x.p.id], best: x.p.id === bestId }))} dark={dark} favs={app.favs}
+            <ResultsTable rows={page.map((x) => ({ ...x, s: stat[x.p.id], best: x.p.id === bestId }))} dark={dark} favs={app.favs}
               checked={checked} onOpen={open} onFav={(p) => app.toggleFav(p)} />
+          )}
+          {waiting && <div className="more-row"><span className="muted">Ищу дальше в магазинах…</span></div>}
+          {(pages > 1 || canMore) && !!shown.length && (
+            <nav className="pager" aria-label="Страницы выдачи">
+              <button type="button" className="pg" disabled={pg <= 1} onClick={() => goPage(pg - 1)} aria-label="Предыдущая страница">‹</button>
+              {Array.from({ length: pages }, (_, i) => i + 1)
+                .filter((n) => n === 1 || n === pages || Math.abs(n - pg) <= 2)
+                .map((n, i, a) => (
+                  <span key={n} style={{ display: 'contents' }}>
+                    {i > 0 && n - a[i - 1] > 1 && <span className="pg-gap">…</span>}
+                    <button type="button" className={'pg' + (n === pg ? ' on' : '')} aria-current={n === pg ? 'page' : undefined} onClick={() => goPage(n)}>{n}</button>
+                  </span>
+                ))}
+              {canMore && <span className="pg-gap" title="В магазинах есть ещё вещи — подгружу, когда дойдёте">…</span>}
+              <button type="button" className="pg" disabled={pg >= pages && !canMore} onClick={() => goPage(pg + 1)} aria-label="Следующая страница">›</button>
+              {more.busy && <span className="small muted">подгружаю следующую страницу магазина…</span>}
+            </nav>
           )}
         </section>
       </div>

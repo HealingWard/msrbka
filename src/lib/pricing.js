@@ -1,7 +1,7 @@
 // Статистика цены по истории проверок: «обычная цена» (коридор p25–p75), минимум, «к обычной»,
 // статус вещи, за которой следите («Пора» / «Ждём» / «Выше обычной»), и прогресс до цели.
 
-import { rub, pct } from './format.js';
+import { plural, rub, pct } from './format.js';
 
 const DAY = 86400000;
 
@@ -41,6 +41,64 @@ export function priceStats(points, periodDays = 90, now = Date.now()) {
   };
 }
 
+/**
+ * Правило статусов цены (исследование 2026-10, см. docs/price-signal.md):
+ * «обычная цена» — медиана нашей истории за 180 дней (сглаженной медианой по 5 дням, чтобы один сбой не решал исход),
+ * коридор — p25…p75 того же ряда. Скидкам магазина не верим: только своя история.
+ */
+export const SIGNAL = {
+  window: 180,        // дней для «обычной цены»
+  youngDays: 14,      // меньше — «история копится»
+  youngChecks: 5,     // и минимум проверок
+  excellent: 0.30,    // «Отличная цена — пора»: на 30 % ниже обычной…
+  excellentP75: 0.40, // …или на 40 % ниже верхней границы коридора (если наблюдаем 45+ дней)
+  p75Days: 45,
+  minSlack: 0.02,     // и не выше минимума за 90 дней + 2 %
+  excellentDays: 21,  // и история от 21 дня
+  good: 0.15,         // «Хорошая цена»: на 15 % ниже обычной и дешевле, чем в 80 % дней
+  goodRank: 0.20,
+  high: 0.08,         // «Выше обычной»: на 8 % выше обычной и выше p75
+  minRub: 300,        // и разница не меньше 300 ₽ — копейки не считаются
+};
+
+const median = (a) => { const s = a.slice().sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const quant = (sorted, f) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * f)))];
+
+/**
+ * Сигнал цены по нашей истории → { level, cur, usual, p25, p75, min90, rank, days, checks, flat, pct, sinceChange, known }
+ * level: 'young' (история копится) | 'excellent' (пора) | 'good' | 'normal' | 'high'. pct — к обычной цене, %.
+ */
+export function priceSignal(points, now = Date.now()) {
+  const all = (points || []).filter((x) => x && x.price > 0).sort((a, b) => a.t - b.t);
+  if (!all.length) return null;
+  const C = SIGNAL;
+  const cur = all[all.length - 1].price;
+  const days = Math.floor((now - all[0].t) / DAY) + 1;
+  const checks = all.length;
+  const st = priceStats(all, C.window, now);
+  const v = st.v;
+  // Сглаживание медианой по 5 дням — только для статистики, не для текущей цены.
+  const sm = v.map((_, i) => median(v.slice(Math.max(0, i - 2), Math.min(v.length, i + 3))));
+  const sorted = sm.slice().sort((a, b) => a - b);
+  const usual = median(sm);
+  const p25 = quant(sorted, 0.25), p75 = quant(sorted, 0.75);
+  const min90 = Math.min(...v.slice(-90));
+  const rank = v.filter((x) => x < cur).length / v.length;
+  const flat = Math.min(...v) === Math.max(...v);
+  let lastChange = all[0].t;
+  for (let i = 1; i < all.length; i++) if (all[i].price !== all[i - 1].price) lastChange = all[i].t;
+  const sinceChange = Math.floor((now - lastChange) / DAY);
+  const pct = changePct(cur, usual);
+  const below = usual - cur;
+  let level = 'normal';
+  if (days < C.youngDays || checks < C.youngChecks) level = 'young';
+  else if ((cur <= usual * (1 - C.excellent) || (days >= C.p75Days && cur <= p75 * (1 - C.excellentP75)))
+    && cur <= min90 * (1 + C.minSlack) && below >= C.minRub && days >= C.excellentDays) level = 'excellent';
+  else if (cur <= usual * (1 - C.good) && below >= C.minRub && rank <= C.goodRank) level = 'good';
+  else if (cur >= usual * (1 + C.high) && cur - usual >= C.minRub && cur > p75) level = 'high';
+  return { level, cur, usual, p25, p75, min90, rank, days, checks, flat, pct, sinceChange, known: level !== 'young' };
+}
+
 /** Изменения цены по проверкам: первая проверка и каждая смена цены → [{ t, price }]. */
 export function priceSteps(points) {
   const all = (points || []).filter((x) => x && x.price > 0).sort((a, b) => a.t - b.t);
@@ -49,11 +107,13 @@ export function priceSteps(points) {
   return out;
 }
 
-/** Бейдж изменения цены: к обычной или «МИНИМУМ ЗА N ДНЕЙ». null — истории пока мало. */
-export function changeBadge(st, days = 90) {
-  if (!st || !st.known) return null;
-  if (st.isMin) return { text: 'Минимум за ' + days + ' дней', tone: 'min' };
-  return { text: pct(st.va), tone: st.va < 0 ? 'drop' : st.va > 0 ? 'rise' : 'flat' };
+/** Бейдж цены по нашей истории: отличная / хорошая / выше обычной. Обычная цена и копящаяся история — без бейджа. */
+export function changeBadge(sig) {
+  if (!sig || !sig.known) return null;
+  if (sig.level === 'excellent') return { text: 'Отличная цена ' + pct(sig.pct), tone: 'min' };
+  if (sig.level === 'good') return { text: pct(sig.pct), tone: 'drop' };
+  if (sig.level === 'high') return { text: pct(sig.pct), tone: 'rise' };
+  return null;
 }
 
 /**
@@ -86,20 +146,19 @@ export function sparkline(points, now = Date.now()) {
 }
 
 /**
- * Статус вещи, за которой следите. cur — текущая цена, tg — цель (или null), st — статистика за 90 дней.
- * → { k: 'pora'|'wait'|'high', label, note, icon }
+ * Статус вещи, за которой следите. cur — текущая цена, tg — цель (или null), sig — priceSignal по нашей истории.
+ * «Пора» — только цель достигнута или отличная цена (на 30 %+ ниже обычной, см. SIGNAL).
+ * → { k: 'pora'|'good'|'wait'|'high', label, note, icon }
  */
-export function itemStatus(cur, tg, st) {
+export function itemStatus(cur, tg, sig) {
+  const p = (n) => Math.abs(n) + '\u00a0%';
   if (tg && cur <= tg) return { k: 'pora', label: 'Пора', note: 'цель достигнута', icon: 'scissors' };
-  if (st && st.known && cur > st.p75) return { k: 'high', label: 'Выше обычной', note: st.va > 0 ? 'на ' + st.va + ' % выше обычной' : 'выше коридора', icon: 'trending-up' };
+  if (sig && sig.level === 'excellent') return { k: 'pora', label: 'Пора', note: 'отличная цена: на ' + p(sig.pct) + ' ниже обычной', icon: 'scissors' };
+  if (sig && sig.level === 'high') return { k: 'high', label: 'Выше обычной', note: 'на ' + p(sig.pct) + ' выше обычной', icon: 'trending-up' };
+  if (sig && sig.level === 'good') return { k: 'good', label: 'Хорошая цена', note: 'на ' + p(sig.pct) + ' ниже обычной' + (tg ? ' · до цели ' + rub(cur - tg) : ''), icon: 'trending-down' };
   if (tg) return { k: 'wait', label: 'Ждём', note: 'до цели ' + rub(cur - tg), icon: 'hourglass' };
-  // «Пора» — только если цена действительно ниже обычной: ниже нижней границы коридора или минимум за период.
-  // Цена, которая не менялась, равна обычной — это не повод покупать (раньше такие вещи получали «ниже обычной на 0 %»).
-  if (st && st.known && (cur < st.p25 || st.isMin) && cur < st.avg) {
-    return { k: 'pora', label: 'Пора', note: st.isMin ? 'минимум за 90 дней' : 'ниже обычной на ' + Math.max(1, Math.abs(st.va)) + ' %', icon: 'scissors' };
-  }
-  const flat = st && st.known && Math.min(...st.v) === Math.max(...st.v);
-  return { k: 'wait', label: 'Ждём', note: !st || !st.known ? 'история цены копится' : flat ? 'цена не менялась' : 'цена в обычном коридоре', icon: 'hourglass' };
+  if (!sig || !sig.known) return { k: 'wait', label: 'Ждём', note: 'история цены копится', icon: 'hourglass' };
+  return { k: 'wait', label: 'Ждём', note: sig.flat ? 'цена не менялась ' + sig.days + ' ' + plural(sig.days, ['день', 'дня', 'дней']) : 'обычная цена', icon: 'hourglass' };
 }
 
 /** Прогресс до цели 0…1: (цена при добавлении − текущая) / (цена при добавлении − цель). */

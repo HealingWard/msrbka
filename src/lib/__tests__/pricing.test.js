@@ -30,23 +30,46 @@ describe('история цены в первую неделю', () => {
   });
 });
 
-import { itemStatus } from '../pricing.js';
+import { changeBadge, itemStatus, priceSignal } from '../pricing.js';
 
-describe('статус вещи', () => {
-  const series = (prices) => prices.map((price, i) => ({ t: now - (prices.length - 1 - i) * DAY, price }));
-  it('цена не менялась две недели — «Ждём», а не «Пора · ниже обычной на 0 %»', () => {
-    const st = priceStats(series(Array(14).fill(18990)), 90, now);
-    expect(st.known).toBe(true);
-    const s = itemStatus(18990, null, st);
-    expect(s.k).toBe('wait');
-    expect(s.note).toBe('цена не менялась');
+describe('правило статусов (исследование: «Пора» — от 30 % ниже обычной)', () => {
+  // Ежедневные проверки за последние n дней с ценой f(день).
+  const hist = (n, f) => Array.from({ length: n }, (_, k) => ({ t: now - (n - 1 - k) * DAY, price: f(k, n) }));
+  const st = (h) => { const s = priceSignal(h, now); return { s, status: itemStatus(h[h.length - 1].price, null, s) }; };
+
+  it('цена не менялась — «Ждём · цена не менялась N дней»', () => {
+    const { s, status } = st(hist(30, () => 18990));
+    expect(s.level).toBe('normal');
+    expect(status).toMatchObject({ k: 'wait', note: 'цена не менялась 30 дней' });
+    expect(changeBadge(s)).toBe(null);
   });
-  it('цена упала до минимума — «Пора»', () => {
-    const st = priceStats(series([...Array(13).fill(20000), 16000]), 90, now);
-    expect(itemStatus(16000, null, st).k).toBe('pora');
+  it('подешевела на 1 ₽ или на 5 % — не повод: «Ждём»', () => {
+    expect(st(hist(30, (k, n) => (k === n - 1 ? 18989 : 18990))).status.k).toBe('wait');
+    expect(st(hist(30, (k, n) => (k === n - 1 ? 18040 : 18990))).status.k).toBe('wait');
   });
-  it('цена вернулась к обычной после скидки — «Ждём»', () => {
-    const st = priceStats(series([...Array(10).fill(20000), 16000, 16000, 20000, 20000]), 90, now);
-    expect(itemStatus(20000, null, st).k).toBe('wait');
+  it('на 15–29 % ниже обычной и дешевле, чем в 80 % дней — «Хорошая цена», но не «Пора»', () => {
+    const { s, status } = st(hist(40, (k, n) => (k >= n - 2 ? 16000 : 20000)));
+    expect(s.level).toBe('good');
+    expect(status.k).toBe('good');
+  });
+  it('на 30 %+ ниже обычной и это минимум за 90 дней — «Пора»', () => {
+    const { s, status } = st(hist(40, (k, n) => (k >= n - 2 ? 13900 : 20000)));
+    expect(s.level).toBe('excellent');
+    expect(status.k).toBe('pora');
+  });
+  it('история меньше 21 дня — даже −35 % только «Хорошая цена»', () => {
+    expect(st(hist(16, (k, n) => (k >= n - 1 ? 13000 : 20000))).s.level).toBe('good');
+  });
+  it('копейки не считаются: разница меньше 300 ₽ — без статуса', () => {
+    expect(st(hist(40, (k, n) => (k >= n - 2 ? 600 : 800))).s.level).toBe('normal');
+  });
+  it('цену подняли перед «распродажей» — «Выше обычной»', () => {
+    const { s, status } = st(hist(60, (k, n) => (k >= n - 5 ? 23000 : 20000)));
+    expect(s.level).toBe('high');
+    expect(status.k).toBe('high');
+  });
+  it('один выброс (сбой) не сдвигает обычную цену', () => {
+    const s = priceSignal(hist(30, (k) => (k === 10 ? 2000 : 20000)), now);
+    expect(s.usual).toBe(20000);
   });
 });

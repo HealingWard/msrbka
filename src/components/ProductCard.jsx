@@ -40,7 +40,6 @@ export function ProductCard({ p, m, s, best, fav, onOpen, onFav, checked, label 
         </div>
         <div className="price-row">
           <span className="price">{v.priceStr}</span>
-          {v.hasOld && <span className="old">{v.oldStr}</span>}
           <PriceChange badge={s?.badge} title={CHG_TITLE} />
         </div>
         <div className="spark">
@@ -119,7 +118,7 @@ export function ResultsTable({ rows, dark, favs, onOpen, onFav, checked }) {
                 <div style={{ minWidth: 0 }}>{p.brand && <div style={{ fontSize: 13, fontWeight: 700 }}>{p.brand}</div>}<div style={{ lineHeight: '18px' }}>{p.title}</div><PromoTag promo={p.promo} /></div>
               </div>
               <span>{p.store}</span>
-              <div><div className="mono">{v.priceStr}</div>{v.hasOld && <div className="strike">{v.oldStr}</div>}</div>
+              <div className="mono">{v.priceStr}</div>
               <span>{s?.badge ? <PriceChange badge={s.badge} title={CHG_TITLE} /> : <span className="sub">копится</span>}</span>
               <div>{v.rating ? <><div className="mono" style={{ fontWeight: 400 }}>★ {v.rating}</div><div className="sub">{v.reviewsStr}</div></> : <span className="sub">—</span>}</div>
               <span className="mono" style={{ fontSize: 12, fontWeight: 400 }}>{(p.sizes || []).length ? p.sizes.join(' ') : '—'}</span>

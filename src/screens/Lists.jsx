@@ -3,7 +3,7 @@ import { dateShort, plural, rub, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { priceAt } from '../lib/history.js';
 import { detectTypes } from '../lib/search.js';
-import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
+import { changePct, deltaBadge, goalProgress, itemStatus, priceSignal } from '../lib/pricing.js';
 import { useHistories, withAdded } from '../lib/useHistories.js';
 import { recheckFavorites, storeIssues } from '../lib/source.js';
 import { isLive } from '../lib/config.js';
@@ -16,7 +16,7 @@ import { useApp } from '../state.jsx';
 import { usePersistentState } from '../lib/storage.js';
 
 const THINGS = ['вещь', 'вещи', 'вещей'];
-const ST_COLOR = { pora: 'c-drop', wait: 'c-muted', high: 'c-rise', out: 'c-rise' };
+const ST_COLOR = { pora: 'c-drop', good: 'c-drop', wait: 'c-muted', high: 'c-rise', out: 'c-rise' };
 
 export function Lists() {
   const app = useApp();
@@ -41,18 +41,18 @@ export function Lists() {
   const all = entries.map(({ id, fv, item }) => {
     const checkedAt = fv.checkedAt ? new Date(fv.checkedAt).getTime() : undefined;
     const pts = withAdded(hist(item, checkedAt), fv);
-    const st = priceStats(pts, 90);
+    const sig = priceSignal(pts);
     const cur = item.price;
     const addedAt = new Date(fv.addedAt).getTime();
     const was = fv.priceAtAdd || priceAt(pts, addedAt) || cur;
     const tg = fv.target || null;
     const soldOut = isSoldOut(item, fv);
     return {
-      id, item, fv, st, cur, was, tg, addedAt, soldOut,
+      id, item, fv, sig, cur, was, tg, addedAt, soldOut,
       list: colls.some((c) => c.id === fv.coll) ? fv.coll : '',
       dl: changePct(cur, was),
       // Нет в наличии — главный статус: подходящая цена ничего не значит, пока вещь не купить.
-      status: soldOut ? { k: 'out', label: 'Нет в наличии', note: cur < was ? 'подешевела, но купить нельзя' : 'ждём, когда вернётся', icon: 'ban' } : itemStatus(cur, tg, st),
+      status: soldOut ? { k: 'out', label: 'Нет в наличии', note: cur < was ? 'подешевела, но купить нельзя' : 'ждём, когда вернётся', icon: 'ban' } : itemStatus(cur, tg, sig),
       prog: goalProgress(was, cur, tg),
       checkFailed: CHECK_FAILED.includes(fv.checkStatus) || fv.checkStatus === 'stale',
     };
@@ -70,7 +70,7 @@ export function Lists() {
   const down = all.filter((r) => r.cur < r.was).length;
   const activeName = activeValid === 'all' ? 'Все вещи' : activeValid === 'none' ? 'Без списка' : colls.find((c) => c.id === activeValid).name;
   // Счётчик статуса считается с учётом фильтра цены, счётчик цены — с учётом статуса.
-  const counts = [['pora', 'Пора', 'scissors'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up'], ['out', 'Нет в наличии', 'ban'], ['crazy', 'Сумасшедшие дни', null]]
+  const counts = [['pora', 'Пора', 'scissors'], ['good', 'Хорошая цена', 'trending-down'], ['wait', 'Ждём', 'hourglass'], ['high', 'Выше обычной', 'trending-up'], ['out', 'Нет в наличии', 'ban'], ['crazy', 'Сумасшедшие дни', null]]
     .map(([k, l, ic]) => ({ k, l, ic, n: priceRows.filter(STATUS_TEST(k)).length }))
     .filter((c) => (c.k !== 'out' && c.k !== 'crazy') || c.n > 0 || statusF === c.k);
   const priceCounts = [['down', 'Подешевели', '↓', 'c-drop'], ['up', 'Подорожали', '↑', 'c-rise']]
