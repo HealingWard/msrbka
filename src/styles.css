@@ -596,6 +596,7 @@ main.main { flex: 1; }
   gap: 16px; padding: 16px; border-bottom: 1px solid var(--line); align-items: center; font-size: 14px; line-height: 20px;
 }
 .lrow:last-child { border-bottom: none; }
+.dd-note { font-size: 13px; line-height: 18px; color: var(--muted); padding: 2px 2px 8px; }
 .more-row { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 32px 0 8px; }
 .pager { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 40px 0 8px; }
 .pager .pg { min-width: 40px; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); color: var(--ink); font-family: var(--mono); font-size: 14px; cursor: pointer; }

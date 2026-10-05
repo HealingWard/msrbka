@@ -79,6 +79,11 @@ export const catBrandCount = (cat) => catBrands[cat]?.size || 0;
  * Категории, по которым список ещё не собран, пропускаем; все бренды — только если не собран ни один.
  * keep — бренды, которые должны остаться в списке (уже выбранные).
  */
+/** Список брендов в нашем написании, без повторов, по алфавиту; keep — уже выбранные. */
+export function canonBrands(list, keep = []) {
+  const canon = new Map(BRANDS.map((b) => [brandKey(b), b]));
+  return dedupeBrands([...keep, ...list.map((b) => canon.get(brandKey(b)) || b)]).sort((x, y) => x.localeCompare(y, 'ru', { sensitivity: 'base' }));
+}
 export function brandsForCats(cats, keep = []) {
   const keys = (cats || []).filter((c) => catBrands[c] && catBrands[c].size >= MIN_CAT_BRANDS);
   const sort = (a) => a.sort((x, y) => x.localeCompare(y, 'ru', { sensitivity: 'base' }));

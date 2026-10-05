@@ -120,7 +120,7 @@ export function useDismiss(open, onClose) {
 }
 
 /** Выпадающий список брендов с поиском и чекбоксами; можно добавить свой бренд. */
-export function BrandPicker({ brands, selected, onToggle, onAdd, footer, meta, wide, label, emptyLabel }) {
+export function BrandPicker({ brands, selected, onToggle, onAdd, footer, meta, wide, label, emptyLabel, note, onOpen }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const close = () => setOpen(false);
@@ -130,11 +130,12 @@ export function BrandPicker({ brands, selected, onToggle, onAdd, footer, meta, w
   const canAdd = qq.length >= 2 && !brands.some((b) => b.toLowerCase() === qq);
   return (
     <div className="dd" ref={ref}>
-      <button type="button" className={'dd-trigger' + (wide ? ' wide' : '')} aria-expanded={open} onClick={() => { setOpen(!open); setQ(''); }}>
+      <button type="button" className={'dd-trigger' + (wide ? ' wide' : '')} aria-expanded={open} onClick={() => { if (!open) onOpen?.(); setOpen(!open); setQ(''); }}>
         <span className="k">Бренды</span><span className="v">{label || emptyLabel}</span><Icon name="chevron-down" size={14} />
       </button>
       {open && (
         <div className={'dd-panel' + (wide ? ' wide' : '')}>
+          {note && <div className="dd-note">{note}</div>}
           <input className="field" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Найти бренд" autoFocus aria-label="Найти бренд" />
           <div className="dd-list">
             {list.map((b) => (

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { CATS, CAT_KEY, DS_CAT, STORE_NAMES, brandsForCats } from '../data/catalog.js';
+import { CATS, CAT_KEY, DS_CAT, STORE_NAMES, brandsForCats, canonBrands } from '../data/catalog.js';
+import { useTypeBrands } from '../lib/typeBrands.js';
 import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { detectTypes, parseQuery } from '../lib/search.js';
@@ -78,6 +79,13 @@ export function Home() {
   const go = () => startSearch(app, query);
   const qCat = query.trim() ? DS_CAT[parseQuery(query, cats).ds] : null;
   const brandCats = qCat ? [qCat] : cats.map((c) => CAT_KEY[c]);
+  // Названа вещь («кроссовки», «кольцо») — бренды, у которых она есть в выбранных магазинах.
+  const tb = useTypeBrands(query, { cats, gender: prefs.gender, stores: selStores });
+  const brandList = tb.list ? canonBrands(tb.list, selBrands) : brandsForCats(brandCats, selBrands);
+  const brandNote = !tb.query ? null
+    : tb.state === 'loading' ? 'Узнаю в магазинах, у каких брендов есть «' + tb.query + '»…'
+      : tb.list ? 'Бренды, у которых есть «' + tb.query + '» — ' + tb.list.length
+        : tb.state === 'unavailable' ? 'Бренды категории: для брендов именно этой вещи нужно расширение 0.6.1+' : null;
 
   return (
     <div className="page w-home">
@@ -97,8 +105,8 @@ export function Home() {
               return <Chip key={n} on={on} onClick={() => setPref('selStores', (l) => toggle(l, n))}>{on ? '✓ ' : ''}{n}</Chip>;
             })}
           </div>
-          {/* Бренды категории: если запрос уже написан («сумка») — его категории, иначе выбранных чипов. */}
-          <BrandPicker brands={brandsForCats(brandCats, selBrands)} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
+          {/* Бренды вещи из запроса (по фильтру магазина), иначе — категории запроса или выбранных чипов. */}
+          <BrandPicker brands={brandList} note={brandNote} onOpen={tb.load} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
               <div className="dd-foot">
