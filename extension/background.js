@@ -100,6 +100,10 @@ async function visit(windowId, url, mode, opts, onNeedHuman, quiet = false) {
       r = await extract(tab.id, mode, opts);
       await chrome.windows.update(windowId, { state: 'minimized' }).catch(() => {});
     }
+    // Для диагностики: страница, на которой не нашлось цены, сохраняется целиком.
+    if (opts && opts.snapOnFail && !(r && r.item && r.item.price) && !(r && r.blocked)) {
+      try { const h = await extract(tab.id, 'html', {}); r = { ...(r || {}), html: h?.html, pageUrl: h?.url, pageTitle: h?.title }; } catch { /* вкладка закрылась */ }
+    }
     return r;
   } finally {
     chrome.tabs.remove(tab.id).catch(() => {});
@@ -229,6 +233,46 @@ async function detailsJob(url, send) {
   }
 }
 
+// ——— диагностика проверок ———
+// Если в одном магазине за проверку не разобралась или «распродалась» половина вещей — это сбой магазина
+// (капча, сайт поменялся), а не распродажа: отметки «нет в наличии» по нему не ставим.
+function guardStores(out) {
+  const by = {};
+  for (const x of out) {
+    const b = by[x.storeId] || (by[x.storeId] = { total: 0, bad: 0, noprice: 0, unparsed: 0, blocked: 0 });
+    b.total++;
+    if (x.status !== 'ok') b.bad++;
+    if (b[x.status] != null) b[x.status]++;
+  }
+  const issues = {};
+  for (const [storeId, b] of Object.entries(by)) {
+    if (b.total >= 4 && b.bad / b.total >= 0.5) {
+      issues[storeId] = b;
+      for (const x of out) if (x.storeId === storeId && x.status === 'noprice') { x.status = 'suspect'; x.why = 'слишком много вещей магазина «пропало» сразу — похоже на сбой, наличие не меняем'; }
+    }
+  }
+  return issues;
+}
+async function saveDiag(d) { try { await chrome.storage.local.set({ 'diag:last': d, ...(d.auto ? { 'diag:auto': d } : { 'diag:manual': d }) }); } catch { /* хранилище */ } }
+async function saveDiagPage(storeId, page) {
+  try { await chrome.storage.local.set({ ['diag:page:' + storeId]: { ...page, html: String(page.html || '').slice(0, 4_000_000) } }); } catch { /* хранилище */ }
+}
+/** Скачивает отчёт о последних проверках и страницы, которые не удалось разобрать, в «Загрузки/otmer/diagnostics». */
+async function downloadDiag() {
+  const all = await chrome.storage.local.get(null);
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const report = { version: chrome.runtime.getManifest().version, at: new Date().toISOString(), last: all['diag:last'] || null, manual: all['diag:manual'] || null, auto: all['diag:auto'] || null,
+    autoState: all[AUTO_KEY] ? { ...all[AUTO_KEY], runs: (all[AUTO_KEY].runs || []).map((r) => ({ at: r.at, news: r.news, ok: r.ok, total: r.total, statuses: (r.results || []).map((x) => x.status) })) } : null };
+  await chrome.downloads.download({ url: toDataUrl(JSON.stringify(report, null, 2), 'application/json'), filename: 'otmer/diagnostics-' + stamp + '/report.json', conflictAction: 'overwrite' });
+  let pages = 0;
+  for (const [k, v] of Object.entries(all)) {
+    if (!k.startsWith('diag:page:') || !v || !v.html) continue;
+    await chrome.downloads.download({ url: toDataUrl(v.html, 'text/html'), filename: 'otmer/diagnostics-' + stamp + '/' + k.slice(10) + '-failed-page.html', conflictAction: 'overwrite' });
+    pages++;
+  }
+  return { pages, folder: 'otmer/diagnostics-' + stamp };
+}
+
 /**
  * Свежие цены товаров из избранного: открывает карточки по очереди в одном свёрнутом окне, без кэша.
  * auto — автопроверка: без проверки «не робот» (магазин, который дважды её показал, пропускаем до следующего раза)
@@ -247,20 +291,26 @@ async function recheckJob(urls, send, auto = false) {
       send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length });
       if (auto && blockedBy[storeId] >= 2) { out.push({ url, status: 'blocked' }); continue; }
       let r = null;
-      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' }), auto); } catch { r = null; }
+      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host, snapOnFail: true }, () => send({ pricel: 'progress', stage: 'human' }), auto); } catch (e) { r = { error: String(e.message || e) }; }
       if (r && r.blocked) blockedBy[storeId] = (blockedBy[storeId] || 0) + 1;
       if (r && r.item && r.item.price) {
         if (!auto) await saveDetails(url, r.item);
-        out.push({ url, status: 'ok', item: { ...r.item, url, store: s.name, storeId } });
-      } else if (r && r.item) {
-        // Карточка открылась, но цены нет — обычно товар распродан или снят с продажи.
-        out.push({ url, status: 'noprice', item: { ...r.item, url, store: s.name, storeId } });
+        out.push({ url, storeId, status: 'ok', item: { ...r.item, url, store: s.name, storeId } });
+      } else if (r && r.item && (r.item.inStock === false || r.soldText)) {
+        // Цены нет, и магазин сам пишет, что товара нет, — распродан или снят с продажи.
+        out.push({ url, storeId, status: 'noprice', why: 'магазин пишет, что товара нет', item: { ...r.item, url, store: s.name, storeId } });
+      } else if (r && r.blocked) {
+        out.push({ url, storeId, status: 'blocked', why: 'магазин попросил подтвердить, что вы не робот' });
       } else {
-        out.push({ url, status: r && r.blocked ? 'blocked' : 'error' });
+        // Страница открылась, но цену прочитать не удалось: это сбой, о наличии он ничего не говорит.
+        out.push({ url, storeId, status: 'unparsed', why: r && r.item ? 'цена не нашлась на странице' : 'страница не открылась' + (r && r.error ? ': ' + r.error : ''), diag: r?.diag || null });
+        if (r && r.html) await saveDiagPage(storeId, { at: Date.now(), url, pageUrl: r.pageUrl, title: r.pageTitle, diag: r.diag || null, html: r.html });
       }
       if (i < list.length - 1) await sleep(900);
     }
-    send({ pricel: 'result', status: 'ok', items: out });
+    const storeIssues = guardStores(out);
+    await saveDiag({ at: Date.now(), auto, total: out.length, storeIssues, items: out.map(({ url, storeId, status, why, diag, item }) => ({ url, storeId, status, why: why || null, diag: diag || null, price: item?.price || null })) });
+    send({ pricel: 'result', status: 'ok', items: out, storeIssues });
   } catch (e) {
     send({ pricel: 'result', status: 'error', items: out, error: String(e.message || e) });
   } finally {
@@ -382,9 +432,10 @@ async function autoRun(force = false) {
     // Следующее сравнение — с только что увиденными ценами.
     const fresh = await autoState();
     const seen = Object.fromEntries(results.filter((x) => x.status === 'ok' || x.status === 'noprice').map((x) => [x.url, x]));
+    const failed = results.filter((x) => x.status !== 'ok' && x.status !== 'noprice').length;
     const items = fresh.items.map((w) => (seen[w.url] ? { ...w, price: seen[w.url].item?.price || w.price, soldOut: seen[w.url].status === 'noprice' } : w));
     const ok = results.filter((x) => x.status === 'ok').length;
-    const run = { at, results, news: { count: news.count, goal: news.goal, down: news.down, back: news.back }, ok, total: results.length };
+    const run = { at, results, news: { count: news.count, goal: news.goal, down: news.down, back: news.back, failed }, ok, total: results.length, storeIssues: r.storeIssues || {} };
     await saveAuto({ items, lastRun: at, running: null, runs: [...(fresh.runs || []), run].slice(-AUTO_RUNS), lastSummary: { at, ...run.news, ok, total: results.length } });
     if (news.count) {
       chrome.notifications.create('otmer-auto', {
@@ -558,6 +609,10 @@ chrome.runtime.onMessage.addListener((m, _sender, sendResponse) => {
   }
   if (m && m.type === 'autoToggle') {
     saveAuto({ enabled: !!m.enabled }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (m && m.type === 'diag') {
+    downloadDiag().then((r) => sendResponse({ ok: true, ...r }), (e) => sendResponse({ ok: false, error: String(e.message || e) }));
     return true;
   }
   if (m && m.type === 'dumpTab') {

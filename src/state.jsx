@@ -115,6 +115,15 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!prefs.v) setPrefs((p) => ({ ...p, selStores: ['Stockmann', 'Lamoda'], v: 2 }));
   }, [prefs.v, setPrefs]);
+  // v4: до расширения 0.5.2 вещь, на странице которой не нашлась цена, помечалась «нет в наличии» —
+  // даже если это была капча или сбой разбора. Снимаем такие отметки: наличие уточнит следующая проверка.
+  useEffect(() => {
+    if ((prefs.v || 0) < 3 || prefs.v >= 4) return;
+    setFavs((f) => Object.fromEntries(Object.entries(f).map(([id, fv]) => (fv.checkStatus === 'noprice'
+      ? [id, { ...fv, checkStatus: 'stale', checkWhy: 'отметка «нет в наличии» снята: она могла быть ошибочной — нажмите «Проверить цены»', item: fv.item && fv.item.stock === 'Нет в наличии' ? { ...fv.item, stock: null } : fv.item }]
+      : [id, fv]))));
+    setPrefs((p) => ({ ...p, v: 4 }));
+  }, [prefs.v, setPrefs, setFavs]);
   // v3: из «Моих поисков» убираем демо-поиски, попавшие туда при первом визите.
   useEffect(() => {
     if ((prefs.v || 0) >= 3) return;
@@ -225,7 +234,8 @@ export function AppProvider({ children }) {
         } else if (r.status === 'noprice') {
           next[r.id] = { ...cur, item: { ...cur.item, stock: 'Нет в наличии' }, checkedAt: at, checkStatus: 'noprice' };
         } else {
-          next[r.id] = { ...cur, checkStatus: r.status };
+          // Сбой проверки: вещь и её наличие не трогаем, запоминаем причину.
+          next[r.id] = { ...cur, checkStatus: r.status, checkWhy: r.why || null, checkFailedAt: at };
         }
       }
       return next;
@@ -249,7 +259,9 @@ export function AppProvider({ children }) {
         appliedRef.current = last.at;
         setPrefs((p) => ({ ...p, autoApplied: last.at }));
         const n = r.runs.reduce((a, run) => ({ down: a.down + (run.news.down || 0), goal: a.goal + (run.news.goal || 0), back: a.back + (run.news.back || 0) }), { down: 0, goal: 0, back: 0 });
-        const parts = [n.goal && 'цель достигнута — ' + n.goal, n.down && 'подешевели — ' + n.down, n.back && 'снова в продаже — ' + n.back].filter(Boolean);
+        const failed = r.runs.reduce((a, run) => a + run.results.filter((x) => x.status !== 'ok' && x.status !== 'noprice').length, 0);
+        const parts = [n.goal && 'цель достигнута — ' + n.goal, n.down && 'подешевели — ' + n.down, n.back && 'снова в продаже — ' + n.back,
+          failed && 'не удалось проверить — ' + failed].filter(Boolean);
         setToast('Цены проверены автоматически' + (parts.length ? ': ' + parts.join(', ') : ', новостей нет'));
       }).catch(() => {});
     }, 1500);
