@@ -3,8 +3,8 @@ import { priceStats } from './pricing.js';
 import { productView } from './product.js';
 
 export const EXPORT_COLUMNS = [
-  ['Фото', 80], ['Название', 240], ['Бренд', 120], ['Магазин', 120], ['Текущая цена', 110], ['Старая цена', 110],
-  ['Скидка', 70], ['Средняя, 90 дн', 120], ['Мин., 90 дн', 110], ['К обычной', 90], ['Рейтинг', 70], ['Отзывы', 76],
+  ['Фото', 80], ['Название', 240], ['Бренд', 120], ['Магазин', 120], ['Текущая цена', 110],
+  ['Средняя, 90 дн', 120], ['Мин., 90 дн', 110], ['К обычной', 90], ['Рейтинг', 70], ['Отзывы', 76],
   ['Наличие', 116], ['Размеры', 120], ['Цвет', 96], ['Соответствие', 104], ['Почему подходит', 400], ['Проверено', 124],
   ['Ссылка на вещь', 150],
 ];
@@ -32,7 +32,7 @@ export function exportRows(items, checked, histories = {}) {
     const va = has ? st.va : null;
     return [
       cell(p.image ? 'фото' : '', 'left', p.image || ''), cell(p.title), cell(p.brand || ''), cell(p.store),
-      cell(rub(p.price), 'right'), cell(v.hasOld ? rub(p.old) : '', 'right'), cell(v.hasOld ? v.discStr : '', 'right'),
+      cell(rub(p.price), 'right'),
       cell(has ? rub(Math.round(st.avg / 10) * 10) : '', 'right'), cell(has ? rub(st.mn) : '', 'right'), cell(has ? pct(va) : '', 'right'),
       cell(v.rating, 'right'), cell(p.reviews ? fmt(p.reviews) : '', 'right'), cell(v.stock), cell((p.sizes || []).join(', ')), cell(p.color || ''),
       cell(m.score + '\u00a0%', 'right'), cell(m.summary), cell(checked), cell(v.domain + (p.demo ? ' / поиск' : ''), 'left', v.url),

@@ -276,12 +276,10 @@ export function sizeNear(a, b) {
 export const emptyFilters = () => ({ stores: [], brands: [], sizes: [], colors: [], min: '', max: '' });
 export const hasFilters = (f) => !!(f.stores.length || f.brands.length || f.sizes.length || f.colors.length || f.min || f.max);
 
-const discount = (p) => (p.old ? 1 - p.price / p.old : 0);
 const SORTERS = {
   match: (x, y) => y.m.score - x.m.score || x.p.price - y.p.price,
   priceAsc: (x, y) => x.p.price - y.p.price,
   priceDesc: (x, y) => y.p.price - x.p.price,
-  discount: (x, y) => discount(y.p) - discount(x.p),
 };
 
 // ——— Тип товара ———

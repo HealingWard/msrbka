@@ -62,7 +62,8 @@ export function PromoTag({ promo }) {
   if (!text) return null;
   const date = crazy ? crazyDateLabel(promo.crazyDate) : '';
   const extra = [date, crazy && promo.crazyText && promo.crazyText !== date ? promo.crazyText : ''].filter(Boolean).join(' · ');
-  const title = [text, extra, crazy && promo.profit ? 'выгода ' + promo.profit.toLocaleString('ru-RU') + ' ₽' : '', ...(promo.badges || [])].filter(Boolean).join(' · ');
+  // «Выгоду», которую пишет магазин, не показываем: скидкам магазина не доверяем — только своей истории цен.
+  const title = [text, extra, ...(promo.badges || [])].filter(Boolean).join(' · ');
   return <span className="promo" title={title}>{text}{extra ? ' · ' + extra : ''}</span>;
 }
 // Участие в «Сумасшедших днях» — только по данным расширения 0.4.4+ (v: 2): в 0.4.3 в акцию ошибочно попадали все товары.

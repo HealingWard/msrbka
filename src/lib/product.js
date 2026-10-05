@@ -7,17 +7,15 @@ export const isSoldOut = (item, fv) => fv?.checkStatus === 'noprice' || item?.st
 /** Последняя проверка цены не удалась (капча, страница не разобралась, не открылась). */
 export const CHECK_FAILED = ['blocked', 'error', 'unparsed', 'suspect'];
 
-/** Отображаемые поля товара, общие для карточки, строки таблицы, страницы товара и выгрузки. */
+/**
+ * Отображаемые поля товара, общие для карточки, строки таблицы, страницы товара и выгрузки.
+ * «Старую» цену и скидку магазина не показываем: им не доверяем, верим только своей истории цен (см. CLAUDE.md).
+ */
 export function productView(p) {
-  const disc = p.old ? Math.round((1 - p.price / p.old) * 100) : 0;
   const sizes = p.sizes || [];
   const store = storeByName(p.store);
   return {
     priceStr: rub(p.price),
-    oldStr: p.old ? rub(p.old) : '',
-    hasOld: !!p.old && disc > 0,
-    disc,
-    discStr: '−' + disc + '%',
     rating: p.rating ? p.rating.toFixed(1).replace('.', ',') : '',
     reviewsStr: p.reviews ? fmt(p.reviews) + ' ' + plural(p.reviews, ['отзыв', 'отзыва', 'отзывов']) : '',
     stock: p.stock || '',

@@ -128,7 +128,6 @@ export function Product({ id, from }) {
 
           <div className="big-price">
             <span className="price">{v.priceStr}</span>
-            {v.hasOld && <span className="old">{v.oldStr}</span>}
             <PriceChange badge={changeBadge(st90)} title="к обычной цене за 90 дней" />
             <PromoTag promo={p.promo} />
           </div>
