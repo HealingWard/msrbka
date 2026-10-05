@@ -4,7 +4,7 @@ import { ddmm, fmt, plural, toggle, whenStr } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
 import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKey } from '../lib/search.js';
 import { searchOne } from '../lib/source.js';
-import { changeBadge, priceStats, sparkline } from '../lib/pricing.js';
+import { changeBadge, priceSignal, sparkline } from '../lib/pricing.js';
 import { useHistories } from '../lib/useHistories.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { BoardCard, ProductCard, ResultsTable } from '../components/ProductCard.jsx';
@@ -198,8 +198,8 @@ export function Results({ run }) {
     const out = {};
     for (const { p } of base) {
       const pts = hist(p, at);
-      const st = priceStats(pts, 90);
-      out[p.id] = { st, badge: changeBadge(st), spark: sparkline(pts) };
+      const sig = priceSignal(pts, at);
+      out[p.id] = { sig, badge: changeBadge(sig), spark: sparkline(pts) };
     }
     return out;
   }, [base, hist, at]);
@@ -207,7 +207,7 @@ export function Results({ run }) {
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
   // «Ниже обычной» — только по нашей истории цены. Скидке магазина к «старой» цене не верим: её нельзя проверить.
-  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : Infinity);
+  const va = (p) => (stat[p.id]?.sig?.known ? stat[p.id].sig.pct : Infinity);
   const canUsual = base.some(({ p }) => Number.isFinite(va(p)));
   const sortKey = sort === 'usual' && !canUsual ? 'match' : sort;
   const shown = sortKey === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;

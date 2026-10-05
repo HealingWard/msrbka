@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { dateLong, dateShort, fmt, plural, rub } from '../lib/format.js';
 import { niceStep } from '../lib/priceHistory.js';
-import { changePct, deltaBadge, priceStats, priceSteps } from '../lib/pricing.js';
+import { SIGNAL, changePct, deltaBadge, priceSignal, priceStats, priceSteps } from '../lib/pricing.js';
 import { PriceChange, Segmented } from './ui.jsx';
 
 const PERIODS = [[30, '30 дней'], [90, '90 дней'], [180, '180 дней']];
@@ -15,18 +15,20 @@ export function PriceChart({ p, points, loading, target, children }) {
   const [hover, setHover] = useState(null);
   const now = Date.now();
   const st = priceStats(points, period, now);
-  const ready = st && st.known && st.v.length >= 2;
+  // Обычная цена и оценка — по правилу статусов (180 дней нашей истории), график — за выбранный период.
+  const sig = priceSignal(points, now);
+  const ready = st && sig && sig.known && st.v.length >= 2;
 
   let body;
   if (loading && !st) {
     body = <div className="hist-empty">Загружаю историю цены…</div>;
   } else if (!ready) {
-    body = st ? <ShortHistory points={points} st={st} now={now} /> : <div className="hist-empty">Пока нет ни одной проверки цены этой вещи.</div>;
+    body = st ? <ShortHistory points={points} st={st} sig={sig} now={now} /> : <div className="hist-empty">Пока нет ни одной проверки цены этой вещи.</div>;
   } else {
     const n = st.v.length;
     const vmax = Math.max(...st.v);
-    const lowV = Math.min(st.mn, target || st.mn);
-    const highV = Math.max(vmax, target || vmax);
+    const lowV = Math.min(st.mn, target || st.mn, sig.p25);
+    const highV = Math.max(vmax, target || vmax, sig.p75);
     const step = niceStep((highV - lowV) / 4 || lowV * 0.05);
     const lo = Math.floor((lowV * 0.97) / step) * step;
     const hi = Math.ceil((highV * 1.02) / step) * step;
@@ -44,10 +46,13 @@ export function PriceChart({ p, points, loading, target, children }) {
     const days = Math.round((now - st.from) / 86400000) + 1;
     const pl = (days < period ? days : period) + ' дней';
     const minDate = dateLong(st.minAt);
-    const sentence = st.isMin ? 'Сейчас минимальная цена за ' + pl + '. Хороший момент, чтобы купить.'
-      : st.va < 0 ? 'Сейчас на ' + -st.va + ' % ниже обычной. Минимум — ' + rub(st.mn) + ' (' + minDate + ').'
-        : st.va > 0 ? 'Пока рано: цена выше обычной на ' + st.va + ' %. Минимум — ' + rub(st.mn) + ' (' + minDate + ').'
-          : 'Цена на обычном уровне. Минимум — ' + rub(st.mn) + ' (' + minDate + ').';
+    const usualR = rub(Math.round(sig.usual / 10) * 10);
+    const P = (n) => Math.abs(n) + ' %';
+    const sentence = sig.level === 'excellent' ? 'Отличная цена: на ' + P(sig.pct) + ' ниже обычной (' + usualR + '). Пора покупать.'
+      : sig.level === 'good' ? 'Хорошая цена: на ' + P(sig.pct) + ' ниже обычной (' + usualR + '). Отличной будет цена от ' + rub(Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100) + ' и ниже.'
+        : sig.level === 'high' ? 'Пока рано: цена на ' + P(sig.pct) + ' выше обычной (' + usualR + ').'
+          : sig.flat ? 'Цена не менялась ' + sig.days + ' ' + plural(sig.days, DAYS_F) + '. Отличной будет цена от ' + rub(Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100) + ' и ниже.'
+            : 'Цена обычная. Минимум за ' + pl + ' — ' + rub(st.mn) + ' (' + minDate + ').';
     const onMove = (e) => {
       const r = e.currentTarget.getBoundingClientRect();
       const i = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1))));
@@ -61,12 +66,12 @@ export function PriceChart({ p, points, loading, target, children }) {
           <div>
             <div className="label">Сейчас</div>
             <div className="v">{rub(st.cur)}</div>
-            <div className="sn"><PriceChange small badge={deltaBadge(st.va)} />к обычной цене</div>
+            <div className="sn">{sig.pct !== 0 && <PriceChange small badge={deltaBadge(sig.pct)} />}{sig.pct !== 0 ? 'к обычной цене' : 'как обычно'}</div>
           </div>
           <div>
             <div className="label">Обычная цена</div>
-            <div className="v">{fmt(st.p25)}–{fmt(st.p75)}&nbsp;₽</div>
-            <div className="sn">средняя {rub(Math.round(st.avg / 10) * 10)}</div>
+            <div className="v">{usualR}</div>
+            <div className="sn">{sig.p25 !== sig.p75 ? 'коридор ' + fmt(sig.p25) + '–' + rub(sig.p75) + ' · ' : ''}за {sig.days} {plural(sig.days, DAYS_F)} наблюдений</div>
           </div>
           <div>
             <div className="label">Минимум за {pl}</div>
@@ -80,9 +85,9 @@ export function PriceChart({ p, points, loading, target, children }) {
         <div className="chart">
           <div className="chart-y">{yt.map((t) => <div key={t.label} style={{ top: t.top }}>{t.label}</div>)}</div>
           <div className="plot" onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}
-            role="img" aria-label={'График цены за ' + pl + ': обычная ' + fmt(st.p25) + '–' + rub(st.p75) + ', минимум ' + rub(st.mn) + ', сейчас ' + rub(st.cur)}>
-            <div className="cor" style={{ top: Y(st.p75) + '%', height: Y(st.p25) - Y(st.p75) + '%' }} />
-            <div className="cor-l label" style={{ top: Y(st.p75) + '%' }}>Обычная цена · {fmt(st.p25)}–{rub(st.p75)}</div>
+            role="img" aria-label={'График цены за ' + pl + ': обычная ' + usualR + ', минимум ' + rub(st.mn) + ', сейчас ' + rub(st.cur)}>
+            <div className="cor" style={{ top: Y(sig.p75) + '%', height: Math.max(0.6, Y(sig.p25) - Y(sig.p75)) + '%' }} />
+            <div className="cor-l label" style={{ top: Y(sig.p75) + '%' }}>Обычная цена · {sig.p25 !== sig.p75 ? fmt(sig.p25) + '–' + rub(sig.p75) : usualR}</div>
             {yt.map((t) => <div key={t.label} className="gl" style={{ top: t.top }} />)}
             {target && (
               <>
@@ -134,13 +139,14 @@ export function PriceChart({ p, points, loading, target, children }) {
  * Первая неделя наблюдений: для «обычной цены» и графика данных мало, но все проверки и изменения цены
  * уже показываем — первая цена, текущая, минимум и список изменений.
  */
-function ShortHistory({ points, st, now }) {
+function ShortHistory({ points, st, sig, now }) {
   const steps = priceSteps(points);
   const first = steps[0];
   const dl = changePct(st.cur, first.price);
   const mn = Math.min(...steps.map((x) => x.price));
   const minAt = steps.filter((x) => x.price === mn).pop().t;
-  const left = Math.max(1, 7 - Math.floor((now - first.t) / DAY));
+  const leftDays = Math.max(0, SIGNAL.youngDays - (Math.floor((now - first.t) / DAY) + 1));
+  const leftChecks = Math.max(0, SIGNAL.youngChecks - (sig?.checks || 0));
   return (
     <>
       <div className="hist-stats">
@@ -175,8 +181,9 @@ function ShortHistory({ points, st, now }) {
         </ol>
       )}
       <p className="hist-empty">
-        Цена записывается при каждом поиске и проверке. Обычная цена, коридор и график появятся после недели наблюдений —
-        через {left} {plural(left, DAYS_F)}.
+        Цена записывается при каждом поиске и проверке. Обычная цена, оценка и график появятся после {SIGNAL.youngDays} дней наблюдений
+        и {SIGNAL.youngChecks} проверок{leftDays || leftChecks ? ' — ' + [leftDays && 'ещё ' + leftDays + ' ' + plural(leftDays, DAYS_F), leftChecks && 'ещё ' + leftChecks + ' ' + plural(leftChecks, ['проверка', 'проверки', 'проверок'])].filter(Boolean).join(' и ') : ''}.
+        Скидкам магазина не верим — только своей истории.
       </p>
     </>
   );

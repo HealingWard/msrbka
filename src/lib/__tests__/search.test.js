@@ -325,23 +325,21 @@ describe('товары для дома', () => {
 });
 
 describe('обычная цена и статусы', async () => {
-  const { priceStats, itemStatus, goalProgress, changeBadge } = await import('../pricing.js');
+  const { priceSignal, itemStatus, goalProgress, changeBadge } = await import('../pricing.js');
   const DAY = 86400000, now = Date.UTC(2026, 8, 27, 12);
-  const pts = (arr) => arr.map(([d, price]) => ({ t: now - d * DAY, price }));
+  // Ежедневные проверки: [дней назад, цена] — цена держится до следующей проверки.
+  const daily = (from, to, price) => Array.from({ length: from - to + 1 }, (_, k) => ({ t: now - (from - k) * DAY, price }));
   it('истории мало — «обычной цены» ещё нет', () => {
-    const st = priceStats(pts([[0, 10000]]), 90, now);
-    expect(st.known).toBe(false);
-    expect(changeBadge(st)).toBe(null);
-    expect(itemStatus(10000, null, st).note).toBe('история цены копится');
+    const sig = priceSignal([{ t: now, price: 10000 }], now);
+    expect(sig.known).toBe(false);
+    expect(changeBadge(sig)).toBe(null);
+    expect(itemStatus(10000, null, sig).note).toBe('история цены копится');
   });
-  it('коридор, «к обычной» и минимум', () => {
-    const st = priceStats(pts([[80, 12000], [40, 10000], [10, 12000], [0, 9000]]), 90, now);
-    expect(st.known).toBe(true);
-    expect(st.mn).toBe(9000);
-    expect(st.isMin).toBe(true);
-    expect(st.va).toBeLessThan(0);
-    expect(changeBadge(st).tone).toBe('min');
-    expect(itemStatus(9000, null, st).k).toBe('pora');
+  it('цена упала на 34 % к обычной и это минимум — «Пора», отличная цена', () => {
+    const sig = priceSignal([...daily(80, 1, 12000), { t: now, price: 7900 }], now);
+    expect(sig.level).toBe('excellent');
+    expect(changeBadge(sig).tone).toBe('min');
+    expect(itemStatus(7900, null, sig)).toMatchObject({ k: 'pora' });
   });
   it('цель: достигнута, ждём, прогресс', () => {
     expect(itemStatus(9000, 9500, null)).toMatchObject({ k: 'pora', note: 'цель достигнута' });
