@@ -35,7 +35,7 @@ function showAuto() {
     const last = Math.max(st.lastRun || 0, st.lastManual || 0);
     const parts = ['Вещей: ' + st.count + '.'];
     if (st.running) parts.push('Идёт проверка (начата ' + when(st.running) + ') — в свёрнутом окне, 5–10 секунд на вещь.');
-    else if (last) parts.push('Последняя проверка: ' + when(last) + (st.last && st.last.at === last ? ' — ' + (st.last.count ? 'новостей: ' + st.last.count : 'без новостей') + ', открылись ' + st.last.ok + ' из ' + st.last.total : '') + '.');
+    else if (last) parts.push('Последняя проверка: ' + when(last) + (st.last && st.last.at === last ? ' — ' + (st.last.count ? 'новостей: ' + st.last.count : 'без новостей') + ', цены прочитаны у ' + st.last.ok + ' из ' + st.last.total + (st.last.failed ? ' (не удалось: ' + st.last.failed + ')' : '') : '') + '.');
     else parts.push('Ещё не проверялись.');
     if (!st.running && st.enabled) parts.push('Следующая: ' + (last ? 'после ' + when(last + 24 * 3600e3) : 'в течение часа') + '.');
     auto.textContent = parts.join(' ');
@@ -49,3 +49,13 @@ autoNow.addEventListener('click', () => {
   setTimeout(showAuto, 500);
 });
 showAuto();
+
+const diagBtn = document.getElementById('diag');
+const out3 = document.getElementById('out3');
+diagBtn.addEventListener('click', () => {
+  diagBtn.disabled = true;
+  chrome.runtime.sendMessage({ type: 'diag' }, (r) => {
+    diagBtn.disabled = false;
+    out3.textContent = r && r.ok ? 'Сохранено в «Загрузки/' + r.folder + '»: отчёт' + (r.pages ? ' и ' + r.pages + ' стр.' : '') + '.' : 'Ошибка: ' + (r?.error || chrome.runtime.lastError?.message || 'неизвестно');
+  });
+});

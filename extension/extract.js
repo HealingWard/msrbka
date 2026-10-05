@@ -316,6 +316,8 @@
     const sizes = Array.isArray(p.sizes) ? p.sizes : [];
     // main — российский размер, second — размер бренда (EU/IT); для подбора нужен российский.
     const label = (z) => clean(String(z.main || z.second || ''));
+    // Наличие размера: «нет» — только если магазин прямо так говорит. Поле не нашлось — считаем, что неизвестно, а не «распродано».
+    const avail = (z) => z.available ?? z.isAvailable ?? z.inStock ?? z.in_stock ?? (z.quantity != null ? z.quantity > 0 : null);
     return {
       url: abs(p.link || p.meta?.canonical || location.pathname),
       title: clean(p.name),
@@ -325,8 +327,8 @@
       image: smImage(p.images),
       images: (p.images || []).slice(0, 6).map((im) => smImage([im])).filter(Boolean),
       color: clean(color?.name || ''),
-      sizes: p.noSize ? ['без размера'] : sizes.filter((z) => z.available).map(label).filter(Boolean),
-      sizesOut: sizes.filter((z) => !z.available).map(label).filter(Boolean),
+      sizes: p.noSize ? ['без размера'] : sizes.filter((z) => avail(z) !== false).map(label).filter(Boolean),
+      sizesOut: sizes.filter((z) => avail(z) === false).map(label).filter(Boolean),
       rating: parseNumber(p.rating),
       reviews: parsePrice(p.reviewsCount),
       inStock: p.available ?? p.isAvailable ?? null,
@@ -565,7 +567,9 @@
       if (ready && ready.blocked) return { blocked: ready.blocked };
       const exact = storeExtract('product');
       if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact], 1, true))[0], source: 'store' };
-      await sleep(1000);
+      await sleep(1500); // страница могла не успеть дорисоваться — пробуем ещё раз
+      const again = storeExtract('product');
+      if (again && again.price) return { blocked: null, item: (await inlineImages([again], 1, true))[0], source: 'store' };
       const here = key(location.href);
       const ld = jsonLd();
       const st = stateProducts();
@@ -586,9 +590,15 @@
         sizesOut: withSizes ? (withSizes.sizesOut || []) : dom.out,
         rating: main.rating || null,
         reviews: main.reviews || null,
-        inStock: main.inStock ?? null,
+        inStock: main.inStock ?? (exact || again)?.inStock ?? null,
       };
-      return { blocked: null, item };
+      // Цены не нашлось. «Нет в наличии» — только если страница сама так говорит (кнопка, плашка);
+      // иначе это сбой разбора (капча, недогруженная страница, магазин поменял сайт), а не распродажа.
+      const head = clean((document.querySelector('main') || document.body)?.innerText || '').slice(0, 4000);
+      const soldText = !item.price && /нет в наличии|распродан|товар закончился|нет в продаже|снят с продажи|sold out/i.test(head);
+      const diag = { title: document.title, h1: clean(document.querySelector('h1')?.innerText || '').slice(0, 120), next: !!nextData(), nuxt: !!lamodaState(),
+        storeItem: !!(exact || again), textLen: (document.body?.innerText || '').length };
+      return { blocked: null, item, soldText, diag };
     }
     return { error: 'unknown mode' };
   };

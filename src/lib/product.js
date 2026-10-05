@@ -3,7 +3,9 @@ import { fmt, plural, rub } from './format.js';
 
 /** Вещи нет в наличии: магазин не показал цену при проверке, отметил «нет в наличии» или все размеры распроданы. */
 export const isSoldOut = (item, fv) => fv?.checkStatus === 'noprice' || item?.stock === 'Нет в наличии'
-  || (!(item?.sizes || []).length && (item?.sizesOut || []).length > 0);
+  || (item?.stock !== 'В наличии' && !(item?.sizes || []).length && (item?.sizesOut || []).length > 0);
+/** Последняя проверка цены не удалась (капча, страница не разобралась, не открылась). */
+export const CHECK_FAILED = ['blocked', 'error', 'unparsed', 'suspect'];
 
 /** Отображаемые поля товара, общие для карточки, строки таблицы, страницы товара и выгрузки. */
 export function productView(p) {

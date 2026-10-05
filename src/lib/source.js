@@ -221,14 +221,36 @@ export async function recheckFavorites(items, onProgress) {
   return { status: r.status === 'error' && !results.length ? 'error' : 'ok', results, error: r.error };
 }
 
-/** Ответ расширения о проверке цен → [{ id, status, item }] для вещей из избранного (byUrl: url → вещь). */
-function recheckResults(raw, byUrl) {
-  return (raw || []).map((x) => {
+/**
+ * Ответ расширения о проверке цен → [{ id, status, why, item }] для вещей из избранного (byUrl: url → вещь).
+ * «Нет в наличии» (noprice) — только если магазин сам так сказал: расширение до 0.5.2 ставило его при любой
+ * странице без цены (капча, сбой разбора), из-за чего вещи в наличии помечались распроданными.
+ * И если в одном магазине «пропала» или не разобралась половина вещей сразу — это сбой магазина, а не распродажа.
+ */
+export function recheckResults(raw, byUrl) {
+  const out = (raw || []).map((x) => {
     const fav = byUrl.get(x.url);
     if (!fav) return null;
     const item = x.item ? liveItem({ ...x.item, store: fav.store, id: fav.id, url: fav.url }) : null;
-    return { id: fav.id, status: x.status, item };
+    let status = x.status, why = x.why || null;
+    if (status === 'noprice' && !(x.item && x.item.inStock === false) && !x.why) { status = 'unparsed'; why = 'цена не нашлась на странице'; }
+    if (status === 'error') why = why || 'страница не открылась';
+    if (status === 'blocked') why = why || 'магазин попросил подтвердить, что вы не робот';
+    return { id: fav.id, store: fav.store, status, why, item };
   }).filter(Boolean);
+  const by = {};
+  for (const r of out) { const b = by[r.store] || (by[r.store] = { total: 0, bad: 0 }); b.total++; if (r.status !== 'ok') b.bad++; }
+  for (const r of out) {
+    const b = by[r.store];
+    if (r.status === 'noprice' && b.total >= 4 && b.bad / b.total >= 0.5) { r.status = 'suspect'; r.why = 'слишком много вещей магазина «пропало» сразу — похоже на сбой, наличие не меняем'; }
+  }
+  return out;
+}
+/** Магазины, у которых больше половины вещей не проверились: { [магазин]: { total, bad } }. */
+export function storeIssues(results) {
+  const by = {};
+  for (const r of results) { const b = by[r.store] || (by[r.store] = { total: 0, bad: 0 }); b.total++; if (r.status !== 'ok' && r.status !== 'noprice') b.bad++; }
+  return Object.fromEntries(Object.entries(by).filter(([, b]) => b.total >= 2 && b.bad / b.total >= 0.5));
 }
 
 export const AUTO_MIN_VERSION = '0.5.0';

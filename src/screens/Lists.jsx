@@ -5,10 +5,10 @@ import { priceAt } from '../lib/history.js';
 import { detectTypes } from '../lib/search.js';
 import { changePct, deltaBadge, goalProgress, itemStatus, priceStats } from '../lib/pricing.js';
 import { useHistories, withAdded } from '../lib/useHistories.js';
-import { recheckFavorites } from '../lib/source.js';
+import { recheckFavorites, storeIssues } from '../lib/source.js';
 import { isLive } from '../lib/config.js';
 import { DEMO_BY_ID } from '../lib/items.js';
-import { isSoldOut } from '../lib/product.js';
+import { CHECK_FAILED, isSoldOut } from '../lib/product.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { PriceChange, PromoTag, Tape, inCrazyDays } from '../components/ui.jsx';
@@ -54,7 +54,7 @@ export function Lists() {
       // Нет в наличии — главный статус: подходящая цена ничего не значит, пока вещь не купить.
       status: soldOut ? { k: 'out', label: 'Нет в наличии', note: cur < was ? 'подешевела, но купить нельзя' : 'ждём, когда вернётся', icon: 'ban' } : itemStatus(cur, tg, st),
       prog: goalProgress(was, cur, tg),
-      checkFailed: fv.checkStatus === 'blocked' || fv.checkStatus === 'error',
+      checkFailed: CHECK_FAILED.includes(fv.checkStatus) || fv.checkStatus === 'stale',
     };
   });
 
@@ -125,9 +125,10 @@ export function Lists() {
       return;
     }
     app.applyRecheck(r.results);
-    const n = { down: 0, up: 0, same: 0, gone: 0, failed: 0 };
+    const n = { down: 0, up: 0, same: 0, gone: 0, failed: 0, blocked: 0 };
     for (const x of r.results) {
       if (x.status === 'noprice') n.gone++;
+      else if (x.status === 'blocked') n.blocked++;
       else if (x.status !== 'ok' || !x.item) n.failed++;
       else if (x.item.price < before[x.id]) n.down++;
       else if (x.item.price > before[x.id]) n.up++;
@@ -135,11 +136,13 @@ export function Lists() {
     }
     const crazy = r.results.filter((x) => x.item && inCrazyDays(x.item)).map((x) => x.item);
     const parts = [n.down && 'подешевели ' + n.down, n.up && 'подорожали ' + n.up, n.same && 'без изменений ' + n.same,
-      n.gone && 'нет в продаже ' + n.gone, n.failed && 'не открылись ' + n.failed].filter(Boolean);
+      n.gone && 'нет в продаже ' + n.gone, n.blocked && 'магазин попросил «не робот» — ' + n.blocked, n.failed && 'не удалось прочитать цену — ' + n.failed].filter(Boolean);
+    const issues = Object.keys(storeIssues(r.results));
     if (r.results.some((x) => x.item?.store === 'Stockmann')) parts.push(crazy.length
       ? 'в «Сумасшедших днях» Stockmann — ' + crazy.length + ': ' + crazy.map((p) => (p.brand ? p.brand + ' ' : '') + p.title).join(', ')
       : 'в «Сумасшедших днях» Stockmann — ни одной');
-    setCheck({ busy: false, summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.' });
+    setCheck({ busy: false, summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.'
+      + (issues.length ? ' ' + issues.join(' и ') + ': не удалось проверить больше половины вещей — наличие у них не меняли. Похоже на сбой магазина: откройте окно расширения «Отмерь» → «Сохранить диагностику» и пришлите папку.' : '') });
     setTimeout(() => setReload((x) => x + 1), 1500);
   };
 
@@ -245,7 +248,10 @@ export function Lists() {
                           <span className="price">{rub(r.cur)}</span>
                           <PriceChange small badge={deltaBadge(r.dl)} title={'с момента добавления: было ' + rub(r.was) + ', сейчас ' + rub(r.cur)}>{' '}<span>с {dateShort(r.addedAt)}</span></PriceChange>
                           {(r.checkFailed || r.fv.checkedAt) && (
-                            <span className="sub">{r.checkFailed ? 'не удалось проверить' : (r.soldOut ? 'цена последней проверки · ' : 'проверено ') + whenStr(r.fv.checkedAt)}</span>
+                            <span className={'sub' + (r.checkFailed ? ' warn' : '')} title={r.fv.checkWhy || undefined}>
+                              {r.checkFailed ? (r.fv.checkStatus === 'stale' ? 'наличие не проверено' : 'не удалось проверить: ' + (r.fv.checkWhy || 'ошибка')) + (r.fv.checkedAt ? ' · цена от ' + whenStr(r.fv.checkedAt) : '')
+                                : (r.soldOut ? 'цена последней проверки · ' : 'проверено ') + whenStr(r.fv.checkedAt)}
+                            </span>
                           )}
                         </div>
                         <div>

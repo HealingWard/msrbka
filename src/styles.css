@@ -626,6 +626,7 @@ main.main { flex: 1; }
 .lnow .chg { padding: 2px 6px; font-size: 12px; }
 .lnow .chg span { color: var(--muted); }
 .lnow .sub { font-size: 12px; color: var(--muted); }
+.lnow .sub.warn { color: var(--rise); }
 .lgoal { display: flex; flex-direction: column; gap: 6px; }
 .lgoal .row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 12px; color: var(--muted); gap: 8px; }
 .lgoal .row span:last-child { color: var(--ink); }
