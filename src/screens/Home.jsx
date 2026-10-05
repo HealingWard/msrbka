@@ -34,7 +34,10 @@ function useFollowRows(app) {
   });
 }
 
-/** Находки дня: вещи из последних поисков (не из списков), которые сильнее всего ниже обычной цены. */
+/**
+ * Находки дня: вещи из последних поисков (не из списков), которые сильнее всего ниже обычной цены.
+ * Только по нашей собственной истории цен: скидке магазина к «старой» цене не верим — её нельзя проверить.
+ */
 function useFinds(app) {
   const pool = useMemo(() => {
     const seen = new Set();
@@ -53,10 +56,7 @@ function useFinds(app) {
     .filter((p) => !app.favs[p.id])
     .map((p) => {
       const st = priceStats(hist(p), 90);
-      if (st && st.known) return { p, score: st.va, badge: deltaBadge(st.va) };
-      // История ещё копится — берём скидку магазина к старой цене.
-      if (p.old && p.old > p.price) { const d = -Math.round((1 - p.price / p.old) * 100); return { p, score: d, badge: deltaBadge(d) }; }
-      return null;
+      return st && st.known ? { p, score: st.va, badge: deltaBadge(st.va) } : null;
     })
     .filter((x) => x && x.score < 0)
     .sort((a, b) => a.score - b.score)
@@ -183,7 +183,7 @@ export function Home() {
             ))}
             {!finds.length && (
               <div className="find" style={{ cursor: 'default', color: 'var(--on-moss-2)', fontSize: 15 }}>
-                Здесь появятся вещи из ваших поисков, которые сейчас дешевле обычного.
+                Здесь появятся вещи из ваших поисков, которые сейчас дешевле обычного — по истории цен, которую копит «Отмерь» (нужна неделя наблюдений). Скидкам магазинов на слово не верим.
               </div>
             )}
           </div>

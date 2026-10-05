@@ -206,8 +206,8 @@ export function Results({ run }) {
 
   if (loading) return <Loading run={run} entry={entry} progress={progress} />;
 
-  // «Ниже обычной»: по истории цены; пока истории нет — по скидке магазина к старой цене.
-  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : p.old > p.price ? -Math.round((1 - p.price / p.old) * 100) : Infinity);
+  // «Ниже обычной» — только по нашей истории цены. Скидке магазина к «старой» цене не верим: её нельзя проверить.
+  const va = (p) => (stat[p.id]?.st?.known ? stat[p.id].st.va : Infinity);
   const canUsual = base.some(({ p }) => Number.isFinite(va(p)));
   const sortKey = sort === 'usual' && !canUsual ? 'match' : sort;
   const shown = sortKey === 'usual' ? list.slice().sort((x, y) => va(x.p) - va(y.p) || y.m.score - x.m.score) : list;

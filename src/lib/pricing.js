@@ -95,7 +95,7 @@ export function itemStatus(cur, tg, st) {
   if (tg) return { k: 'wait', label: 'Ждём', note: 'до цели ' + rub(cur - tg), icon: 'hourglass' };
   // «Пора» — только если цена действительно ниже обычной: ниже нижней границы коридора или минимум за период.
   // Цена, которая не менялась, равна обычной — это не повод покупать (раньше такие вещи получали «ниже обычной на 0 %»).
-  if (st && st.known && (cur < st.p25 || st.isMin) && cur < st.avg) {
+  if (st && st.known && (cur < st.p25 || st.isMin) && st.va < 0) {
     return { k: 'pora', label: 'Пора', note: st.isMin ? 'минимум за 90 дней' : 'ниже обычной на ' + Math.max(1, Math.abs(st.va)) + ' %', icon: 'scissors' };
   }
   const flat = st && st.known && Math.min(...st.v) === Math.max(...st.v);

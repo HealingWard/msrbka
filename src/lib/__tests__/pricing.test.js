@@ -45,6 +45,10 @@ describe('статус вещи', () => {
     const st = priceStats(series([...Array(13).fill(20000), 16000]), 90, now);
     expect(itemStatus(16000, null, st).k).toBe('pora');
   });
+  it('на копейки ниже средней (округляется до 0 %) — не «Пора»', () => {
+    const st = priceStats(series([...Array(13).fill(20000), 19990]), 90, now);
+    expect(itemStatus(19990, null, st).k).toBe('wait');
+  });
   it('цена вернулась к обычной после скидки — «Ждём»', () => {
     const st = priceStats(series([...Array(10).fill(20000), 16000, 16000, 20000, 20000]), 90, now);
     expect(itemStatus(20000, null, st).k).toBe('wait');
