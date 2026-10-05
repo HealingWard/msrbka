@@ -10,7 +10,7 @@ const STORES = {
     // Параметр страницы у Stockmann не документирован — пробуем варианты и проверяем номер страницы в данных.
     page: (q, n, param) => 'https://stockmann.ru/search/?q=' + encodeURIComponent(q) + '&' + param + '=' + n,
     pageParams: ['page', 'PAGEN_1'],
-    maxPages: 6,
+    maxPages: 1000, // страниц выдачи — до конца; это только защита от бесконечного цикла
     linkPattern: '^/(?:product|catalog/product|p)/[^/]+',
     brands: ['https://stockmann.ru/brands/', 'https://stockmann.ru/brands/?role=women'],
   },
@@ -19,7 +19,7 @@ const STORES = {
     search: (q) => 'https://www.lamoda.ru/catalogsearch/result/?q=' + encodeURIComponent(q),
     page: (q, n, param) => 'https://www.lamoda.ru/catalogsearch/result/?q=' + encodeURIComponent(q) + '&' + param + '=' + n,
     pageParams: ['page'],
-    maxPages: 3,
+    maxPages: 1000,
     linkPattern: '^/p/[a-z0-9]{6,}/',
   },
 };
@@ -137,7 +137,11 @@ function mergeDetails(item, d) {
 
 // ——— задачи ———
 
-async function searchJob(storeId, query, limit, send) {
+/**
+ * Поиск в магазине: выдача целиком — все страницы до последней (limit 0) или до limit вещей.
+ * ctl.stopped — пользователь нажал «Остановить»: отдаём то, что уже нашли.
+ */
+async function searchJob(storeId, query, limit, send, ctl = {}) {
   const s = STORES[storeId];
   if (!s) return send({ pricel: 'result', status: 'error', items: [], error: 'неизвестный магазин' });
   const searchUrl = s.search(query);
@@ -152,19 +156,21 @@ async function searchJob(storeId, query, limit, send) {
     }
     if (!r.items.length) return send({ pricel: 'result', status: 'empty', items: [], error: 'на странице не нашлось товаров', searchUrl });
 
-    // Следующие страницы выдачи: пока есть новые товары и не набран лимит.
-    const max = limit || 150;
+    // Следующие страницы выдачи: все, пока есть новые товары (или до лимита, если он задан).
+    const max = limit > 0 ? limit : Infinity;
+    // Фото Stockmann встраиваем только для первых вещей: на десятки тысяч вещей не хватит памяти.
+    const INLINE_MAX = 240;
     const seen = new Set(r.items.map((x) => x.url));
     let all = r.items.slice();
     let total = r.page?.total || null;
     let param = null;
-    for (let n = 2; n <= (s.maxPages || 1) && all.length < max && (!total || n <= total); n++) {
-      send({ pricel: 'progress', stage: 'search', page: n, found: all.length, total: r.page?.found || null });
+    for (let n = 2; n <= (s.maxPages || 1) && all.length < max && (!total || n <= total) && !ctl.stopped; n++) {
+      send({ pricel: 'progress', stage: 'search', page: n, pages: total, found: all.length, total: r.page?.found || null });
       let fresh = null;
       for (const p of param ? [param] : s.pageParams) {
         await sleep(1200);
         let pr = null;
-        try { pr = await visit(win, s.page(query, n, p), 'search', { linkPattern: s.linkPattern, host: s.host }, () => send({ pricel: 'progress', stage: 'human' })); } catch { pr = null; }
+        try { pr = await visit(win, s.page(query, n, p), 'search', { linkPattern: s.linkPattern, host: s.host, noInline: all.length >= INLINE_MAX }, () => send({ pricel: 'progress', stage: 'human' })); } catch { pr = null; }
         if (!pr || pr.blocked || !pr.items?.length) continue;
         // Магазин проигнорировал параметр и вернул первую страницу — пробуем другой.
         if (pr.page?.current && pr.page.current !== n) continue;
@@ -180,15 +186,16 @@ async function searchJob(storeId, query, limit, send) {
       all = all.concat(fresh);
     }
     let items = all.slice(0, max);
+    const partial = !!ctl.stopped;
 
     // Карточки открываем только для товаров, по которым выдача не дала размеров
     // (у Stockmann и Lamoda размеры, цвет и бренд обычно есть прямо в выдаче).
-    const need = items.filter((x) => !x.detailed).slice(0, DETAILS_LIMIT);
+    const need = partial ? [] : items.filter((x) => !x.detailed).slice(0, DETAILS_LIMIT);
     let done = 0;
     send({ pricel: 'progress', stage: 'details', done, total: need.length, found: items.length });
     const queue = [...need];
     const worker = async () => {
-      while (queue.length) {
+      while (queue.length && !ctl.stopped) {
         const it = queue.shift();
         let d = await cachedDetails(it.url);
         if (!d) {
@@ -206,7 +213,7 @@ async function searchJob(storeId, query, limit, send) {
     };
     await Promise.all(Array.from({ length: DETAILS_PARALLEL }, worker));
     items = items.map((x) => ({ ...x, store: s.name, storeId }));
-    send({ pricel: 'result', status: 'ok', items, searchUrl, brands: (r.brands || []).slice(0, 2000), facetBrands: (r.facetBrands || []).slice(0, 2000) });
+    send({ pricel: 'result', status: 'ok', items, searchUrl, partial, storeTotal: r.page?.found || null, brands: (r.brands || []).slice(0, 2000), facetBrands: (r.facetBrands || []).slice(0, 2000) });
   } catch (e) {
     send({ pricel: 'result', status: 'error', items: [], error: String(e.message || e), searchUrl });
   } finally {
@@ -533,8 +540,12 @@ chrome.runtime.onConnect.addListener((port) => {
   let alive = true;
   port.onDisconnect.addListener(() => { alive = false; });
   const send = (m) => { if (alive) try { port.postMessage(m); } catch { alive = false; } };
+  // Остановка: кнопка «Остановить» на сайте или закрытая страница — задача отдаёт найденное и заканчивает.
+  const ctl = { stopped: false };
+  port.onDisconnect.addListener(() => { ctl.stopped = true; });
   port.onMessage.addListener((m) => {
-    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.limit, send);
+    if (m.type === 'stop') { ctl.stopped = true; return; }
+    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), +m.limit || 0, send, ctl);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
     else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
     else if (m.type === 'catbrands') catBrandsJob(!!m.force, send);

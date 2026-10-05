@@ -113,7 +113,7 @@ export function Home() {
           {GENDERS.map(([k, l]) => <Chip key={k} on={(prefs.gender || 'any') === k} onClick={() => setPref('gender', k)}>{l}</Chip>)}
         </div>
         <div className="small home-hint">
-          {selStores.length ? 'Ищем в: ' + selStores.join(', ') + '. Enter — найти.' : 'Отметьте магазины — или спрошу после запроса.'}
+          {selStores.length ? 'Ищем в: ' + selStores.join(', ') + '. Enter — найти. Пустая строка — все вещи выбранных категорий.' : 'Отметьте магазины — или спрошу после запроса.'}
           {isLive() && <> Stockmann и Lamoda — через <a href="#/extension">расширение для Chrome</a>.</>}
         </div>
       </div>

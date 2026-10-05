@@ -4,6 +4,8 @@
 //   GET /api/search?store=lamoda&q=тренч          — товары одного магазина
 //   GET /api/product?url=https://www.lamoda.ru/p/…  — карточка товара + история цены
 //   GET /api/history?id=lamoda:ABC&id=stockmann:123  — история цен для избранного (или ids=a,b)
+//   POST /api/histories {ids:[…]}                    — история для большой выдачи (до 5000 вещей; только вещи с историей)
+//   POST /api/record {items:[…]}                     — цены, увиденные расширением (до 1000 вещей)
 //
 // Переменные окружения: PORT (8787), HOST (0.0.0.0), DATA_DIR (./data),
 // ALLOWED_ORIGINS (через запятую, по умолчанию «*»), CACHE_MINUTES (20), STORE_GAP_MS (1500), RATE_PER_MINUTE (60).
@@ -128,16 +130,26 @@ export function createApp({
     if (req.method === 'POST' && u.pathname === '/api/record') {
       if (!limiter.allow(ip)) return send(429, { error: 'слишком много запросов' });
       let body;
-      try { body = JSON.parse(await readBody(req, 512 * 1024)); } catch (e) { return send(400, { error: e.message === 'too large' ? 'слишком большой запрос' : 'неверный JSON' }); }
+      try { body = JSON.parse(await readBody(req, 2 * 1024 * 1024)); } catch (e) { return send(400, { error: e.message === 'too large' ? 'слишком большой запрос' : 'неверный JSON' }); }
       const now = Date.now();
       let saved = 0;
-      for (const it of [].concat(body?.items || []).slice(0, 200)) {
+      for (const it of [].concat(body?.items || []).slice(0, 1000)) {
         const rec = validRecord(it);
         if (rec) { history.record(rec, now); saved++; }
       }
       return send(200, { saved });
     }
-    if (req.method !== 'GET') return send(405, { error: 'только GET и POST /api/record' });
+    // История цен для большой выдачи (тысячи вещей) одним запросом; вещи без истории не возвращаем.
+    if (req.method === 'POST' && u.pathname === '/api/histories') {
+      if (!limiter.allow(ip)) return send(429, { error: 'слишком много запросов' });
+      let body;
+      try { body = JSON.parse(await readBody(req, 1024 * 1024)); } catch (e) { return send(400, { error: e.message === 'too large' ? 'слишком большой запрос' : 'неверный JSON' }); }
+      const ids = [].concat(body?.ids || []).filter((x) => typeof x === 'string' && x.length <= 300).slice(0, 5000);
+      const out = {};
+      for (const id of ids) { const h = history.get(id); if (h.length) out[id] = h; }
+      return send(200, out);
+    }
+    if (req.method !== 'GET') return send(405, { error: 'только GET и POST /api/record, /api/histories' });
 
     try {
       if (u.pathname === '/api/health') return send(200, { ok: true });

@@ -3,7 +3,7 @@
 import { DEMO_BY_ID, DEMO_ITEMS, idFor, liveItem } from './items.js';
 import { extDetails, extRecheck, extSearch, extWatch, extensionVersion, versionAtLeast } from './extension.js';
 import { isSoldOut } from './product.js';
-import { BED_SIZE, CONFUSING_ADJ, detectColors, detectTypes } from './search.js';
+import { BED_SIZE, CONFUSING_ADJ, browseQueries, detectColors, detectTypes } from './search.js';
 import { apiUrl, isLive } from './config.js';
 import { STORES, storeByName } from '../data/catalog.js';
 import { HISTORY_DAYS, priceHistory } from './priceHistory.js';
@@ -18,6 +18,7 @@ export const NOEXT_ERROR = 'поиск в этом магазине идёт ч�
  * отдельными запросами: поиск магазина ищет товары со всеми словами сразу.
  */
 export function storeQueries(run) {
+  if (run.browse) return browseQueries(run).slice(0, 8);
   let q = ' ' + run.q + ' ';
   // \b в JS не работает с кириллицей, поэтому границы слов задаём явно.
   q = q.replace(/(^|[\s,])до\s*\d[\d\s]*(?:к|тыс\.?)?\s*(?:₽|руб\.?|р\.)?(?=[\s,]|$)/gi, ' ');
@@ -73,7 +74,7 @@ export function storeQueries(run) {
     const fallback = q.replace(/(^|[\s,])(?:и|или|либо)(?=[\s,]|$)/gi, ' ').replace(/\s+/g, ' ').trim();
     return [fallback || (run.crit.color ? [].concat(run.crit.color)[0] : run.q)];
   }
-  return uniq.slice(0, 3);
+  return uniq.slice(0, run.browse ? 8 : 3);
 }
 
 export const storeQuery = (run) => storeQueries(run)[0];
@@ -91,11 +92,20 @@ const sleep = (ms, signal) => new Promise((res, rej) => {
   signal?.addEventListener('abort', () => { clearTimeout(t); rej(new DOMException('aborted', 'AbortError')); });
 });
 
-/** Отправляет увиденные цены на сервер — из них складывается история цен. */
+/**
+ * Отправляет увиденные цены на сервер — из них складывается история цен.
+ * Большая выдача уходит пачками по 200 вещей с паузой (сервер ограничивает число запросов в минуту).
+ */
+let recordQueue = Promise.resolve();
 function recordPrices(items) {
   if (!isLive() || !items.length) return;
-  const body = JSON.stringify({ items: items.map((p) => ({ id: p.id, url: p.url, title: p.title, store: p.store, price: p.price, old: p.old })) });
-  fetch(apiUrl() + '/api/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+  const rows = items.map((p) => ({ id: p.id, url: p.url, title: p.title, store: p.store, price: p.price }));
+  for (let i = 0; i < rows.length; i += 200) {
+    const body = JSON.stringify({ items: rows.slice(i, i + 200) });
+    recordQueue = recordQueue
+      .then(() => fetch(apiUrl() + '/api/record', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).catch(() => {}))
+      .then(() => (i + 200 < rows.length ? new Promise((r) => setTimeout(r, 1100)) : null));
+  }
 }
 
 const extItem = (storeName) => (raw) => liveItem({ ...raw, store: storeName, id: idFor(storeName, raw.url) });
@@ -104,7 +114,7 @@ const extItem = (storeName) => (raw) => liveItem({ ...raw, store: storeName, id:
  * Поиск в одном магазине → { status: 'ok'|'blocked'|'empty'|'noext'|'error', items, error, searchUrl }.
  * onProgress получает промежуточные шаги расширения ({ stage, done, total, found }).
  */
-export async function searchOne(run, storeName, signal, index = 0, onProgress) {
+export async function searchOne(run, storeName, signal, index = 0, onProgress, stopSignal) {
   const store = storeByName(storeName);
   const q = storeQuery(run);
   if (isLive() && store.ext) {
@@ -115,11 +125,16 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     const brands = new Set();
     const facetBrands = new Set();
     const statuses = [];
+    let partial = false, storeTotal = 0;
     for (let i = 0; i < queries.length; i++) {
+      if (stopSignal?.aborted) { partial = true; break; }
       try {
-        const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i] });
-        const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, limit: Math.floor(150 / queries.length) });
+        const progress = (p) => onProgress?.({ ...p, part: queries.length > 1 ? i + 1 : null, parts: queries.length, query: queries[i], found: (p.found || 0) + byUrl.size });
+        // Вся выдача магазина по запросу — до последней страницы (limit 0).
+        const r = await extSearch(store.id, queries[i], { onProgress: progress, signal, stopSignal, limit: 0 });
         statuses.push(r);
+        if (r.partial) partial = true;
+        storeTotal += r.storeTotal || 0;
         for (const b of r.brands || []) brands.add(b);
         for (const b of r.facetBrands || []) facetBrands.add(b);
         for (const x of r.items || []) if (x.url && x.price && x.title && !byUrl.has(x.url)) byUrl.set(x.url, x);
@@ -135,6 +150,7 @@ export async function searchOne(run, storeName, signal, index = 0, onProgress) {
     return {
       status: ok ? 'ok' : first.status || 'error', items, error: ok ? null : first.error || null,
       searchUrl: statuses[0]?.searchUrl || searchUrl, queries, brands: [...brands], facetBrands: [...facetBrands],
+      ...(partial ? { partial: true, storeTotal: storeTotal || null } : {}),
     };
   }
   if (!isLive()) {
@@ -285,7 +301,21 @@ export async function fetchHistories(items, signal) {
     if (p.demo || !isLive()) out[p.id] = demoHistory(p.id);
     else live.push(p.id);
   }
-  for (let i = 0; i < live.length; i += 100) {
+  // Большая выдача — одним запросом на 5000 вещей (сервер с POST /api/histories); старый сервер — по 100,
+  // но не больше 20 запросов, чтобы не упереться в его ограничение запросов в минуту.
+  let bulk = live.length > 100;
+  for (let i = 0; bulk && i < live.length; i += 5000) {
+    try {
+      const r = await fetch(apiUrl() + '/api/histories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: live.slice(i, i + 5000) }), signal });
+      if (!r.ok) { bulk = false; break; }
+      Object.assign(out, await r.json());
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      bulk = false;
+    }
+  }
+  if (bulk) return out;
+  for (let i = 0; i < Math.min(live.length, 2000); i += 100) {
     const chunk = live.slice(i, i + 100);
     try {
       Object.assign(out, await getJson('/api/history?' + chunk.map((id) => 'id=' + encodeURIComponent(id)).join('&'), signal));
