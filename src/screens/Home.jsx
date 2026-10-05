@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { CATS, CAT_KEY, STORE_NAMES, brandsForCats } from '../data/catalog.js';
+import { CATS, CAT_KEY, DS_CAT, STORE_NAMES, brandsForCats } from '../data/catalog.js';
 import { cap, rub, pct, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
-import { detectTypes } from '../lib/search.js';
+import { detectTypes, parseQuery } from '../lib/search.js';
 import { priceAt } from '../lib/history.js';
 import { changeBadge, changePct, goalProgress, itemStatus, priceSignal } from '../lib/pricing.js';
 import { useHistories, withAdded } from '../lib/useHistories.js';
@@ -76,6 +76,8 @@ export function Home() {
   const wait = rows.filter((r) => r.tg && r.cur > r.tg);
   const brandsLabel = !selBrands.length ? 'любые' : selBrands.length === 1 ? selBrands[0] : selBrands[0] + ' +' + (selBrands.length - 1);
   const go = () => startSearch(app, query);
+  const qCat = query.trim() ? DS_CAT[parseQuery(query, cats).ds] : null;
+  const brandCats = qCat ? [qCat] : cats.map((c) => CAT_KEY[c]);
 
   return (
     <div className="page w-home">
@@ -95,8 +97,8 @@ export function Home() {
               return <Chip key={n} on={on} onClick={() => setPref('selStores', (l) => toggle(l, n))}>{on ? '✓ ' : ''}{n}</Chip>;
             })}
           </div>
-          {/* Бренды только выбранных категорий: обувь — бренды обуви, аксессуары — аксессуаров. */}
-          <BrandPicker brands={brandsForCats(cats.map((c) => CAT_KEY[c]), selBrands)} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
+          {/* Бренды категории: если запрос уже написан («сумка») — его категории, иначе выбранных чипов. */}
+          <BrandPicker brands={brandsForCats(brandCats, selBrands)} selected={selBrands} label={brandsLabel} onAdd={app.learnBrands}
             onToggle={(b) => setPref('selBrands', (list) => toggle(list, b))}
             footer={() => (
               <div className="dd-foot">

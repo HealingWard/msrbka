@@ -76,13 +76,13 @@ export function addCatBrands(cat, list) {
 export const catBrandCount = (cat) => catBrands[cat]?.size || 0;
 /**
  * Бренды для выбора: только бренды выбранных категорий (ключи clothes | shoes | acc | home).
- * Если категории не выбраны или по какой-то из них список ещё не собран — все бренды.
+ * Категории, по которым список ещё не собран, пропускаем; все бренды — только если не собран ни один.
  * keep — бренды, которые должны остаться в списке (уже выбранные).
  */
 export function brandsForCats(cats, keep = []) {
-  const keys = (cats || []).filter((c) => catBrands[c]);
+  const keys = (cats || []).filter((c) => catBrands[c] && catBrands[c].size >= MIN_CAT_BRANDS);
   const sort = (a) => a.sort((x, y) => x.localeCompare(y, 'ru', { sensitivity: 'base' }));
-  if (!keys.length || keys.some((c) => catBrands[c].size < MIN_CAT_BRANDS)) return sort(dedupeBrands([...allBrands(), ...keep]));
+  if (!keys.length) return sort(dedupeBrands([...allBrands(), ...keep]));
   // Написание — как в нашем списке («12 Storeez», а не «12 STOREEZ» из фильтра магазина).
   const canon = new Map(BRANDS.map((b) => [brandKey(b), b]));
   return sort(dedupeBrands([...keep, ...keys.flatMap((c) => [...catBrands[c].values()]).map((b) => canon.get(brandKey(b)) || b)]));

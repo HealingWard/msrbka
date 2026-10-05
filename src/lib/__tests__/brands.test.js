@@ -14,9 +14,6 @@ describe('бренды по категориям', () => {
     expect(list).toHaveLength(bags.length + 1);
     expect(list).not.toContain('Nike');
   });
-  it('если одна из выбранных категорий не собрана — все бренды', () => {
-    expect(brandsForCats(['acc', 'home']).length).toBeGreaterThan(bags.length + 50);
-  });
   it('написание бренда — как в общем списке', () => {
     addCatBrands('acc', ['12 STOREEZ']);
     expect(brandsForCats(['acc'])).toContain('12 Storeez');
@@ -24,5 +21,13 @@ describe('бренды по категориям', () => {
   });
   it('повторы без учёта регистра не добавляются', () => {
     expect(addCatBrands('acc', ['FURLA', 'furla'])).toBe(0);
+  });
+});
+
+describe('бренды: категория без собранного списка не открывает все бренды', () => {
+  it('аксессуары собраны, дом нет — только аксессуары', () => {
+    const list = brandsForCats(['acc', 'home']);
+    expect(list).toContain('Furla');
+    expect(list).not.toContain('Nike');
   });
 });
