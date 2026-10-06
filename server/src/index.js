@@ -8,6 +8,7 @@
 // Переменные окружения: PORT (8787), HOST (0.0.0.0), DATA_DIR (./data),
 // ALLOWED_ORIGINS (через запятую, по умолчанию «*»), CACHE_MINUTES (20), STORE_GAP_MS (1500), RATE_PER_MINUTE (60).
 
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,11 @@ import { Inflight, RateLimit, Throttle, TtlCache } from './cache.js';
 import { BlockedError } from './http.js';
 import { PriceHistory } from './history.js';
 import { STORES, fetchProduct, searchStore, storeForUrl } from './stores.js';
+
+// Версия кода (коммит и дата) — её пишут install.sh и update.sh; видна в /api/health.
+const VERSION = (() => {
+  try { return readFileSync(new URL('../version.txt', import.meta.url), 'utf8').trim(); } catch { return 'dev'; }
+})();
 
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
@@ -140,7 +146,7 @@ export function createApp({
     if (req.method !== 'GET') return send(405, { error: 'только GET и POST /api/record' });
 
     try {
-      if (u.pathname === '/api/health') return send(200, { ok: true });
+      if (u.pathname === '/api/health') return send(200, { ok: true, version: VERSION });
       if (u.pathname === '/api/stores') {
         return send(200, Object.values(STORES).map((s) => ({ id: s.id, name: s.name, domain: s.domain, note: s.note || null })));
       }
