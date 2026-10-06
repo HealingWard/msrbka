@@ -55,6 +55,12 @@ describe('matchProduct', () => {
     expect(m.score).toBe(100);
     expect(m.summary).toBe('Совпадают бренд, размер и цвет, в пределах бюджета.');
   });
+  it('без бренда, размера, цвета и бюджета нечего сверять — пояснения нет', () => {
+    const m = matchProduct(PRODUCT_BY_ID.t1, {});
+    expect(m.asked).toBe(false);
+    expect(m.summary).toBe('');
+    expect(matchProduct(PRODUCT_BY_ID.t1, { color: ['бежевый'] }).asked).toBe(true);
+  });
   it('снижает оценку за близкий цвет и другой бренд', () => {
     const m = matchProduct(PRODUCT_BY_ID.t4, { brands: ['12 Storeez'], size: 'M', color: ['бежевый'], budget: 25000 });
     expect(m.score).toBe(30 + 10 + 10); // размер + половина цвета + бюджет

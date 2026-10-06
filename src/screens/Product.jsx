@@ -197,7 +197,7 @@ export function Product({ id, from }) {
             </div>
           )}
 
-          {showMatch && (
+          {showMatch && m.asked && (
             <div className="match">
               <div className="match-head"><span className="label">Почему подходит</span><span className="score">{m.score}&nbsp;%</span></div>
               <div className="sum">{m.summary}</div>

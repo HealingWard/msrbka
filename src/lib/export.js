@@ -34,7 +34,7 @@ export function exportRows(items, checked, histories = {}) {
       cell(rub(p.price), 'right'),
       cell(has ? rub(Math.round(sig.usual / 10) * 10) : '', 'right'), cell(has ? rub(sig.min90) : '', 'right'), cell(has ? pct(sig.pct) : '', 'right'),
       cell(v.rating, 'right'), cell(p.reviews ? fmt(p.reviews) : '', 'right'), cell(v.stock), cell((p.sizes || []).join(', ')), cell(p.color || ''),
-      cell(m.score + '\u00a0%', 'right'), cell(m.summary), cell(checked), cell(v.domain + (p.demo ? ' / поиск' : ''), 'left', v.url),
+      cell(m.asked ? m.score + '\u00a0%' : '—', 'right'), cell(m.summary || '—'), cell(checked), cell(v.domain + (p.demo ? ' / поиск' : ''), 'left', v.url),
     ];
   });
 }

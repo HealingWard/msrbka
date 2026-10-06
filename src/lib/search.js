@@ -213,11 +213,11 @@ export function matchProduct(p, c = {}, sys = null) {
   if (unk.length) parts.push(unk.join(' и ') + ' — уточните в магазине');
   if (r.price.s === 'ok') parts.push('в пределах бюджета');
   else if (r.price.s !== 'any') parts.push('цена ' + r.price.t);
-  if (!parts.length) parts.push('подходит по описанию запроса');
-
+  // Запрос без бренда, размера, цвета и бюджета («сумка») — сверять нечего: пояснения нет, карточка его не показывает.
   return {
     score,
-    summary: cap(parts.join(', ')) + '.',
+    asked: KEYS.some((k) => r[k].s !== 'any'),
+    summary: parts.length ? cap(parts.join(', ')) + '.' : '',
     pills: KEYS.filter((k) => r[k].s !== 'any').map((k) => ({ key: k, label: LABEL[k], s: r[k].s })),
     reasons: KEYS.map((k, i) => ({ key: k, label: i + 1 + '. ' + LABEL[k], text: r[k].t, s: r[k].s })),
   };
