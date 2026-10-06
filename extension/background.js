@@ -162,12 +162,13 @@ function freeSlot(storeId) {
   q.wait.shift()?.();
 }
 
-async function searchJob(storeId, query, page, send) {
+/** brandsOnly — нужны только бренды из фильтра «Бренд» выдачи (бренды, у которых эта вещь есть), без вещей и фото. */
+async function searchJob(storeId, query, page, send, brandsOnly = false) {
   const s = STORES[storeId];
   if (!s) return send({ pricel: 'result', status: 'error', items: [], error: 'неизвестный магазин' });
   const searchUrl = s.search(query);
   const n = Math.max(1, Math.floor(+page) || 1);
-  const opts = { linkPattern: s.linkPattern, host: s.host };
+  const opts = { linkPattern: s.linkPattern, host: s.host, brandsOnly };
   const human = () => send({ pricel: 'progress', stage: 'human' });
   send({ pricel: 'progress', stage: 'queue', page: n });
   await takeSlot(storeId);
@@ -197,6 +198,7 @@ async function searchJob(storeId, query, page, send) {
       const why = r.blocked === 'denied' ? 'магазин отклонил запрос' : 'проверка «не робот» не пройдена';
       return send({ pricel: 'result', status: 'blocked', items: [], error: why, searchUrl });
     }
+    if (brandsOnly) return send({ pricel: 'result', status: 'ok', items: [], searchUrl, page: { current: n, total: r.page?.total || null, found: r.page?.found || null }, facetBrands: (r.facetBrands || []).slice(0, 3000) });
     if (!r.items?.length) return send({ pricel: 'result', status: n === 1 ? 'empty' : 'end', items: [], error: n === 1 ? 'на странице не нашлось товаров' : null, searchUrl });
     const items = r.items.map((x) => ({ ...x, store: s.name, storeId }));
     send({
@@ -532,7 +534,7 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => { alive = false; });
   const send = (m) => { if (alive) try { port.postMessage(m); } catch { alive = false; } };
   port.onMessage.addListener((m) => {
-    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.page, send);
+    if (m.type === 'search') searchJob(m.store, String(m.query || '').slice(0, 200), m.page, send, !!m.brandsOnly);
     else if (m.type === 'details' && typeof m.url === 'string') detailsJob(m.url, send);
     else if (m.type === 'brands') brandsJob(m.store, !!m.force, send);
     else if (m.type === 'catbrands') catBrandsJob(!!m.force, send);

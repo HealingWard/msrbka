@@ -231,7 +231,7 @@ describe('тип товара', () => {
     expect(detectTypes('брючный костюм')).toEqual(['костюм']);
     expect(detectTypes('Брюки прямые')).toEqual(['брюки']);
     expect(detectTypes('Жакет двубортный')).toEqual(['жакет']);
-    expect(detectTypes('Плащ')).toEqual(['тренч']);
+    expect(detectTypes('Плащ')).toEqual(['плащ']);
   });
   it('товары другого типа скрываются, но их можно показать', () => {
     const mk = (id, title) => liveItem({ id, store: 'Lamoda', url: 'u' + id, title, price: 10000 });

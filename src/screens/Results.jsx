@@ -6,6 +6,7 @@ import { criteriaChips, detectTypes, emptyFilters, getResults, hasFilters, runKe
 import { hasMore, searchMore, searchOne, storeFound } from '../lib/source.js';
 import { changeBadge, priceSignal, sparkline } from '../lib/pricing.js';
 import { useHistories } from '../lib/useHistories.js';
+import { rememberTypeBrands, typeQuery } from '../lib/typeBrands.js';
 import { ExportModal } from '../components/ExportModal.jsx';
 import { BoardCard, ProductCard, ResultsTable } from '../components/ProductCard.jsx';
 import { Icon } from '../components/Icon.jsx';
@@ -166,6 +167,11 @@ export function Results({ run }) {
           if (res.brands && res.brands.length) learnBrands(res.brands);
           // Бренды из фильтра выдачи — бренды категории этого поиска (тапочки → обувь).
           if (res.facetBrands && res.facetBrands.length && DS_CAT[run.ds]) learnCatBrands(DS_CAT[run.ds], res.facetBrands);
+          // Поиск вещи без бренда и цвета («кроссовки женские») — его фильтр «Бренд» и есть бренды, у которых она есть.
+          if (res.facetBrands?.length && !run.browse && !run.crit.brands.length) {
+            const tq = typeQuery(run.q, { gender: run.crit.gender });
+            if (tq && res.queries?.length === 1 && res.queries[0] === tq) rememberTypeBrands(name, tq, res.facetBrands);
+          }
           const { brands: _b, facetBrands: _f, ...rest } = res;
           setStoreResult(key, name, rest);
         })
@@ -192,7 +198,7 @@ export function Results({ run }) {
 
   const items = useMemo(() => (loading ? [] : run.stores.flatMap((n) => entry.stores[n].items || [])), [loading, run.stores, entry]);
   const { base, list, hidden, hiddenWhy } = useMemo(
-    () => getResults(items, run.crit, f, sort, { types, showOther }),
+    () => getResults(items, run.crit, f, sort, { types, showOther, ds: run.ds }),
     [items, run.crit, f, sort, types, showOther],
   );
 

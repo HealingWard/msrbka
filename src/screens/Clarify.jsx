@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DS_CAT, PRODUCTS, STORE_NAMES, allBrands, brandsForCats } from '../data/catalog.js';
+import { DS_CAT, PRODUCTS, STORE_NAMES, allBrands, brandsForCats, canonBrands } from '../data/catalog.js';
+import { useTypeBrands } from '../lib/typeBrands.js';
 import { isLive } from '../lib/config.js';
 import { plural, rub, toggle } from '../lib/format.js';
 import { navigate } from '../lib/router.js';
@@ -60,6 +61,8 @@ export function Clarify() {
   const [tried, setTried] = useState(false);
 
   useEffect(() => { if (!pending) navigate('/', { replace: true }); }, [pending]);
+  // Бренды, у которых есть вещь из запроса, в отмеченных магазинах (до раннего выхода — это хук).
+  const tb = useTypeBrands(pending?.q || '', { cats: app.prefs.cats, gender: pending?.crit?.gender || null, stores: ans.store?.length ? ans.store : pending?.stores });
   if (!pending) return null;
 
   const { ds, crit: c, missing } = pending;
@@ -123,7 +126,9 @@ export function Clarify() {
               </div>
               {k === 'brand' ? (
                 <div className="qcard-opts">
-                  <BrandPicker wide brands={brandsForCats(DS_CAT[ds] ? [DS_CAT[ds]] : [], qBrands)} selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
+                  <BrandPicker wide brands={tb.list ? canonBrands(tb.list, qBrands) : brandsForCats(DS_CAT[ds] ? [DS_CAT[ds]] : [], qBrands)} onOpen={tb.load}
+                    note={!tb.query ? null : tb.state === 'loading' ? 'Узнаю в магазинах, у каких брендов есть «' + tb.query + '»…' : tb.list ? 'Бренды, у которых есть «' + tb.query + '» — ' + tb.list.length : null}
+                    selected={qBrands} onAdd={app.learnBrands} emptyLabel={anyOn ? 'любой' : 'не выбраны'}
                     label={qBrands.length ? (qBrands.length <= 2 ? qBrands.join(', ') : qBrands[0] + ' +' + (qBrands.length - 1)) : ''}
                     meta={inResults}
                     onToggle={(b) => setAns((st) => ({ ...st, brand: toggle((st.brand || []).filter((x) => x !== ANY_BRAND), b) }))}
