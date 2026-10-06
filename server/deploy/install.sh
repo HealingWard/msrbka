@@ -2,7 +2,8 @@
 # Установка сервера поиска «Отмерь» на чистый VPS (Ubuntu/Debian), одной командой от root:
 #   curl -fsSL https://raw.githubusercontent.com/HealingWard/msrbka/main/server/deploy/install.sh | bash
 # Свой домен (необязательно):  ... | bash -s -- api.example.ru
-# Повторный запуск обновляет код и перезапускает сервер.
+# Повторный запуск обновляет код и перезапускает сервер. Дальше сервер обновляется сам:
+# таймер pricel-update раз в час берёт свежий код из main (deploy/update.sh).
 #
 # Что делает: ставит Node.js и Caddy (HTTPS-сертификат выпускается сам), скачивает код из GitHub,
 # запускает сервер как службу systemd, проверяет, что видно в магазинах, и печатает адрес API.
@@ -67,6 +68,7 @@ else
   git clone -q --depth 1 --branch "$REF" "$REPO" "$APP_DIR"
 fi
 (cd "$APP_DIR/server" && npm ci --omit=dev --no-audit --no-fund --loglevel=error)
+git -C "$APP_DIR" log -1 --format='%h %cs' > "$APP_DIR/server/version.txt"
 echo "версия: $(git -C "$APP_DIR" log -1 --format='%h %s')"
 
 say "Служба pricel"
@@ -126,12 +128,44 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 WantedBy=multi-user.target
 UNIT
 
+say "Автообновление"
+mkdir -p /etc/pricel
+cat > /etc/pricel/env <<ENV
+PRICEL_REF=$REF
+PRICEL_DOMAIN=$DOMAIN
+ENV
+cat > /etc/systemd/system/pricel-update.service <<UNIT
+[Unit]
+Description=Pricel: update from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=$(dirname "$(command -v node)"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/bash $APP_DIR/server/deploy/update.sh
+UNIT
+cat > /etc/systemd/system/pricel-update.timer <<UNIT
+[Unit]
+Description=Pricel: check for updates hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+echo "сервер сам берёт новые версии из $REF раз в час (журнал: journalctl -u pricel-update)"
+
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
   ufw allow 80/tcp >/dev/null && ufw allow 443/tcp >/dev/null
 fi
 
 systemctl daemon-reload
 systemctl enable -q pricel caddy
+systemctl enable -q --now pricel-update.timer
 systemctl restart pricel caddy
 
 say "Проверка"
