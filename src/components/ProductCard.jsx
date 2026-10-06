@@ -62,7 +62,7 @@ export function ProductCard({ p, m, s, best, fav, onOpen, onFav, checked, label 
             {p.color && <> · {v.colorHex && <i className="sw10" style={{ background: v.colorHex }} />}{p.color}</>}
           </span>
         </div>
-        <div className="why">
+        {m.asked && <div className="why">
           <div className="why-head"><span className="label">Почему подходит</span><span className="score">{m.score}&nbsp;%</span></div>
           {m.pills.length > 0 && (
             <div className="pills">
@@ -70,7 +70,7 @@ export function ProductCard({ p, m, s, best, fav, onOpen, onFav, checked, label 
             </div>
           )}
           <div className="why-text">{m.summary}</div>
-        </div>
+        </div>}
         <div className="pcard-foot">
           <span>Проверено {checked}</span>
           <a href={v.url} target="_blank" rel="noopener noreferrer" onClick={stop}>{v.domain}<Icon name="external-link" size={14} /></a>
@@ -125,8 +125,10 @@ export function ResultsTable({ rows, dark, favs, onOpen, onFav, checked }) {
               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{v.colorHex && <i className="sw10" style={{ background: v.colorHex, borderColor: 'rgba(128,120,110,.4)' }} />}{p.color || '—'}</span>
               <div><div style={{ fontWeight: v.lowStock ? 700 : 500 }}>{v.stock || '—'}</div><div className="sub">{checked}</div></div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 400, minWidth: 40 }}>{m.score}&nbsp;%</span>
-                <span className="sub" style={{ fontSize: 13, lineHeight: '18px' }}>{m.summary}</span>
+                {m.asked ? <>
+                  <span className="mono" style={{ fontSize: 13, fontWeight: 400, minWidth: 40 }}>{m.score}&nbsp;%</span>
+                  <span className="sub" style={{ fontSize: 13, lineHeight: '18px' }}>{m.summary}</span>
+                </> : <span className="sub">—</span>}
               </div>
               <div className="t-acts">
                 <a className="t-btn" href={v.url} target="_blank" rel="noopener noreferrer" onClick={stop} title="Открыть в магазине" aria-label="Открыть в магазине"><Icon name="external-link" size={16} /></a>

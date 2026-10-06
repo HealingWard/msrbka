@@ -265,7 +265,7 @@ export function Results({ run }) {
   const open = (id) => navigate('/product/' + encodeURIComponent(id) + '?from=results');
   const d = new Date(entry.at);
   const summary = base.length + ' ' + plural(base.length, THINGS) + ' · ' + run.stores.length + ' ' + plural(run.stores.length, ['магазин', 'магазина', 'магазинов'])
-    + ' · ' + full + ' подходят полностью · проверено ' + ddmm(d) + ', ' + d.toTimeString().slice(0, 5);
+    + (base.some((x) => x.m.asked) ? ' · ' + full + ' подходят полностью' : '') + ' · проверено ' + ddmm(d) + ', ' + d.toTimeString().slice(0, 5);
 
   return (
     <div className="page w-results">
