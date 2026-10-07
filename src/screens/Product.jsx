@@ -84,7 +84,7 @@ export function Product({ id, from }) {
     follow = { since: dateLong(addedAt), was, dl, prog: goalProgress(was, p.price, target) };
   }
   const sugs = [
-    ...(sig && sig.known ? [['Отличная цена (−30 % к обычной)', Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100], ['Минимум за 90 дней', sig.min90]] : []),
+    ...(sig && sig.known ? [['Отличная цена (−30 % к обычной)', Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100], ['Минимум за 30 дней', sig.minRecent]] : []),
     ['−10 % от текущей', Math.floor((p.price * 0.9) / 100) * 100],
   ].filter(([, x], i, a) => a.findIndex(([, y]) => y === x) === i);
   const saveGoal = () => {

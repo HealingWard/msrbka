@@ -7,7 +7,7 @@ const stop = (e) => e.stopPropagation();
 const onKeyOpen = (open) => (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) open(); };
 // Пропорции фото на доске чередуются — как у настоящих снимков разного кадра.
 const AR = ['3 / 4', '4 / 5', '1 / 1', '2 / 3', '4 / 5', '3 / 4', '5 / 6', '2 / 3'];
-const CHG_TITLE = 'к обычной цене за 90 дней';
+const CHG_TITLE = 'к обычной цене по нашей истории';
 
 export { Photo };
 

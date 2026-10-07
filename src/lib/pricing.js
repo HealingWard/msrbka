@@ -48,13 +48,14 @@ export function priceStats(points, periodDays = 90, now = Date.now()) {
  */
 export const SIGNAL = {
   window: 180,        // дней для «обычной цены»
-  youngDays: 14,      // меньше — «история копится»
-  youngChecks: 5,     // и минимум проверок
+  youngDays: 7,       // меньше — «история копится» (MVP; пересмотр — после сезона распродаж, docs/price-signal.md)
+  youngChecks: 4,     // и минимум проверок
   excellent: 0.30,    // «Отличная цена — пора»: на 30 % ниже обычной…
   excellentP75: 0.40, // …или на 40 % ниже верхней границы коридора (если наблюдаем 45+ дней)
   p75Days: 45,
-  minSlack: 0.02,     // и не выше минимума за 90 дней + 2 %
-  excellentDays: 21,  // и история от 21 дня
+  minDays: 30,        // и не выше минимума за последние 30 дней наших наблюдений (сколько их есть)…
+  minSlack: 0.02,     // …+ 2 %
+  excellentDays: 7,   // и история от 7 дней
   good: 0.15,         // «Хорошая цена»: на 15 % ниже обычной и дешевле, чем в 80 % дней
   goodRank: 0.20,
   high: 0.08,         // «Выше обычной»: на 8 % выше обычной и выше p75
@@ -65,7 +66,7 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); const m = s.l
 const quant = (sorted, f) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * f)))];
 
 /**
- * Сигнал цены по нашей истории → { level, cur, usual, p25, p75, min90, rank, days, checks, flat, pct, sinceChange, known }
+ * Сигнал цены по нашей истории → { level, cur, usual, p25, p75, minRecent, rank, days, checks, flat, pct, sinceChange, known }
  * level: 'young' (история копится) | 'excellent' (пора) | 'good' | 'normal' | 'high'. pct — к обычной цене, %.
  */
 export function priceSignal(points, now = Date.now()) {
@@ -82,7 +83,8 @@ export function priceSignal(points, now = Date.now()) {
   const sorted = sm.slice().sort((a, b) => a - b);
   const usual = median(sm);
   const p25 = quant(sorted, 0.25), p75 = quant(sorted, 0.75);
-  const min90 = Math.min(...v.slice(-90));
+  // Минимум за последние minDays дней из того, что есть: ждать 30 дней не нужно.
+  const minRecent = Math.min(...v.slice(-C.minDays));
   const rank = v.filter((x) => x < cur).length / v.length;
   const flat = Math.min(...v) === Math.max(...v);
   let lastChange = all[0].t;
@@ -93,10 +95,10 @@ export function priceSignal(points, now = Date.now()) {
   let level = 'normal';
   if (days < C.youngDays || checks < C.youngChecks) level = 'young';
   else if ((cur <= usual * (1 - C.excellent) || (days >= C.p75Days && cur <= p75 * (1 - C.excellentP75)))
-    && cur <= min90 * (1 + C.minSlack) && below >= C.minRub && days >= C.excellentDays) level = 'excellent';
+    && cur <= minRecent * (1 + C.minSlack) && below >= C.minRub && days >= C.excellentDays) level = 'excellent';
   else if (cur <= usual * (1 - C.good) && below >= C.minRub && rank <= C.goodRank) level = 'good';
   else if (cur >= usual * (1 + C.high) && cur - usual >= C.minRub && cur > p75) level = 'high';
-  return { level, cur, usual, p25, p75, min90, rank, days, checks, flat, pct, sinceChange, known: level !== 'young' };
+  return { level, cur, usual, p25, p75, minRecent, rank, days, checks, flat, pct, sinceChange, known: level !== 'young' };
 }
 
 /** Изменения цены по проверкам: первая проверка и каждая смена цены → [{ t, price }]. */
@@ -147,7 +149,7 @@ export function sparkline(points, now = Date.now()) {
 
 /**
  * Статус вещи, за которой следите. cur — текущая цена, tg — цель (или null), sig — priceSignal по нашей истории.
- * «Пора» — только цель достигнута или отличная цена (на 30 %+ ниже обычной, см. SIGNAL).
+ * «Пора» — только цель достигнута или отличная цена (на 30 %+ ниже обычной и у минимума за 30 дней, см. SIGNAL).
  * → { k: 'pora'|'good'|'wait'|'high', label, note, icon }
  */
 export function itemStatus(cur, tg, sig) {

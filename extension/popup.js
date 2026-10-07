@@ -37,7 +37,7 @@ function showAuto() {
     if (st.running) parts.push('Идёт проверка (начата ' + when(st.running) + ') — в свёрнутом окне, 5–10 секунд на вещь.');
     else if (last) parts.push('Последняя проверка: ' + when(last) + (st.last && st.last.at === last ? ' — ' + (st.last.count ? 'новостей: ' + st.last.count : 'без новостей') + ', цены прочитаны у ' + st.last.ok + ' из ' + st.last.total + (st.last.failed ? ' (не удалось: ' + st.last.failed + ')' : '') : '') + '.');
     else parts.push('Ещё не проверялись.');
-    if (!st.running && st.enabled) parts.push('Следующая: ' + (last ? 'после ' + when(last + 24 * 3600e3) : 'в течение часа') + '.');
+    if (!st.running && st.enabled) parts.push('Следующая: ' + (st.nextAt && st.nextAt > Date.now() ? 'после ' + when(st.nextAt) : 'в течение часа, пока открыт Chrome') + '.');
     auto.textContent = parts.join(' ');
     autoNow.disabled = !!st.running;
   });
