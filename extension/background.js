@@ -262,6 +262,7 @@ async function downloadDiag() {
   const all = await chrome.storage.local.get(null);
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
   const report = { version: chrome.runtime.getManifest().version, at: new Date().toISOString(), last: all['diag:last'] || null, manual: all['diag:manual'] || null, auto: all['diag:auto'] || null,
+    autoLog: all[LOG_KEY] || [], autoPartial: all[PARTIAL_KEY] ? { started: all[PARTIAL_KEY].started, done: (all[PARTIAL_KEY].items || []).length } : null,
     autoState: all[AUTO_KEY] ? { ...all[AUTO_KEY], runs: (all[AUTO_KEY].runs || []).map((r) => ({ at: r.at, news: r.news, ok: r.ok, total: r.total, statuses: (r.results || []).map((x) => x.status) })) } : null };
   await chrome.downloads.download({ url: toDataUrl(JSON.stringify(report, null, 2), 'application/json'), filename: 'otmer/diagnostics-' + stamp + '/report.json', conflictAction: 'overwrite' });
   let pages = 0;
@@ -279,6 +280,10 @@ async function downloadDiag() {
  * и без кэша карточек (в нём фото, а хранилище расширения не резиновое).
  */
 async function recheckJob(urls, send, auto = false) {
+  if (!auto) manualJobs++;
+  try { return await recheckList(urls, send, auto); } finally { if (!auto) manualJobs--; }
+}
+async function recheckList(urls, send, auto) {
   const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, auto ? 300 : 100);
   if (!list.length) return send({ pricel: 'result', status: 'empty', items: [] });
   const win = await openWindow();
@@ -288,7 +293,7 @@ async function recheckJob(urls, send, auto = false) {
     for (let i = 0; i < list.length; i++) {
       const url = list[i];
       const [storeId, s] = storeForUrl(url);
-      send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length });
+      send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length, ...(auto ? { items: out } : {}) });
       if (auto && blockedBy[storeId] >= 2) { out.push({ url, status: 'blocked' }); continue; }
       let r = null;
       try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host, snapOnFail: true }, () => send({ pricel: 'progress', stage: 'human' }), auto); } catch (e) { r = { error: String(e.message || e) }; }
@@ -356,9 +361,42 @@ async function brandsJob(storeId, force, send) {
 // подешевело, дошло до цели или вернулось в продажу, показывает уведомление. Сайт забирает результаты при открытии.
 
 const AUTO_KEY = 'auto';
-const AUTO_EVERY = 24 * 3600e3;
+const AUTO_EVERY = 24 * 3600e3; // для сайта и окна расширения: «раз в день»
+const AUTO_GAP = 12 * 3600e3;   // не чаще, чем раз в 12 часов
 const AUTO_RUNS = 14; // сколько последних проверок храним, пока сайт их не забрал
+const PARTIAL_KEY = 'auto:partial'; // проверенное до обрыва (Chrome закрыли, расширение перезапустилось)
+const PARTIAL_TTL = 12 * 3600e3;
+const LOG_KEY = 'auto:log';
 let autoBusy = false;
+let manualJobs = 0; // ручные проверки с сайта, идущие сейчас
+
+/** Журнал автопроверки: когда и почему запускалась или пропускалась (последние 60 записей, попадает в диагностику). */
+async function autoLog(ev, extra = {}) {
+  try {
+    const log = (await chrome.storage.local.get(LOG_KEY))[LOG_KEY] || [];
+    const last = log[log.length - 1];
+    // Повторяющиеся «рано» и «занято» не забивают журнал: обновляем последнюю запись и считаем повторы.
+    const entry = { at: new Date().toISOString(), ev, ...extra };
+    const next = last && last.ev === ev && ['not-due', 'busy', 'manual-busy'].includes(ev) ? [...log.slice(0, -1), { ...entry, n: (last.n || 1) + 1 }] : [...log, entry];
+    await chrome.storage.local.set({ [LOG_KEY]: next.slice(-60) });
+  } catch { /* хранилище */ }
+}
+
+/**
+ * Пора ли проверять: раз в календарный день. Последняя проверка была вчера или раньше — проверяем при первом
+ * будильнике сегодня (то есть вскоре после того, как открыт Chrome), но не раньше чем через 12 часов после неё.
+ */
+function autoDue(last, now = Date.now()) {
+  if (!last) return true;
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  return last < today.getTime() && now - last >= AUTO_GAP;
+}
+/** Когда будет следующая автопроверка (для окна расширения). */
+function autoNextAt(last) {
+  if (!last) return Date.now();
+  const next = new Date(last); next.setHours(24, 0, 0, 0);
+  return Math.max(next.getTime(), last + AUTO_GAP);
+}
 
 async function autoState() {
   const st = (await chrome.storage.local.get(AUTO_KEY))[AUTO_KEY] || {};
@@ -414,18 +452,42 @@ function autoNews(results, byUrl) {
   return { count: goal.length + down.length + back.length, goal: goal.length, down: down.length, back: back.length, lines };
 }
 
-async function autoRun(force = false) {
-  if (autoBusy) return { status: 'busy' };
+async function autoRun(force = false, why = 'alarm') {
+  if (autoBusy) { await autoLog('busy', { why }); return { status: 'busy' }; }
   const st = await autoState();
-  if (!st.items.length) return { status: 'empty' };
-  if (!force && (!st.enabled || Date.now() - lastCheck(st) < AUTO_EVERY)) return { status: 'skip' };
+  // Прошлая проверка оборвалась (Chrome закрыли, расширение перезапустилось): снимаем отметку «идёт».
+  if (st.running) { await autoLog('interrupted', { startedAt: new Date(st.running).toISOString() }); await saveAuto({ running: null }); }
+  if (!st.items.length) { await autoLog('empty', { why }); return { status: 'empty' }; }
+  if (!force && !st.enabled) { await autoLog('off', { why }); return { status: 'skip' }; }
+  if (!force && manualJobs) { await autoLog('manual-busy', { why }); return { status: 'busy' }; }
+  if (!force && !autoDue(lastCheck(st))) { await autoLog('not-due', { why, last: new Date(lastCheck(st)).toISOString() }); return { status: 'skip' }; }
   autoBusy = true;
   await saveAuto({ running: Date.now() });
+  // Расширение Chrome может усыпить фоновую часть посреди долгой проверки: регулярный вызов API её не даёт усыпить.
+  const keep = setInterval(() => { chrome.runtime.getPlatformInfo().catch(() => {}); }, 20000);
   try {
     await purgeDetails().catch(() => {});
     const byUrl = Object.fromEntries(st.items.map((w) => [w.url, w]));
-    const r = await new Promise((resolve) => recheckJob(st.items.map((w) => w.url), (m) => { if (m.pricel === 'result') resolve(m); }, true));
-    const results = (r.items || []).map((x) => ({ ...x, item: slim(x.item) }));
+    // Продолжаем оборванную проверку: уже проверенные вещи не открываем заново.
+    const part = (await chrome.storage.local.get(PARTIAL_KEY))[PARTIAL_KEY];
+    const prior = part && Date.now() - part.started < PARTIAL_TTL ? (part.items || []).filter((x) => byUrl[x.url]) : [];
+    const doneUrls = new Set(prior.map((x) => x.url));
+    const todo = st.items.map((w) => w.url).filter((u) => !doneUrls.has(u));
+    const started = prior.length ? part.started : Date.now();
+    await autoLog('start', { why, items: st.items.length, resumed: prior.length });
+    let saved = 0;
+    const r = await new Promise((resolve) => {
+      recheckJob(todo, (m) => {
+        if (m.pricel === 'result') resolve(m);
+        // Каждые 5 вещей запоминаем проверенное, чтобы после обрыва продолжить с того же места.
+        else if (m.pricel === 'progress' && m.items && m.items.length - saved >= 5) {
+          saved = m.items.length;
+          chrome.storage.local.set({ [PARTIAL_KEY]: { started, items: [...prior, ...m.items.map((x) => ({ ...x, item: slim(x.item) }))] } }).catch(() => {});
+        }
+      }, true).catch((e) => resolve({ status: 'error', items: [], error: String(e.message || e) }));
+    });
+    if (r.status === 'error' && !(r.items || []).length && !prior.length) throw new Error(r.error || 'проверка не удалась');
+    const results = [...prior, ...(r.items || []).map((x) => ({ ...x, item: slim(x.item) }))];
     const at = Date.now();
     await recordPrices(st.api, results, byUrl);
     const news = autoNews(results, byUrl);
@@ -437,6 +499,8 @@ async function autoRun(force = false) {
     const ok = results.filter((x) => x.status === 'ok').length;
     const run = { at, results, news: { count: news.count, goal: news.goal, down: news.down, back: news.back, failed }, ok, total: results.length, storeIssues: r.storeIssues || {} };
     await saveAuto({ items, lastRun: at, running: null, runs: [...(fresh.runs || []), run].slice(-AUTO_RUNS), lastSummary: { at, ...run.news, ok, total: results.length } });
+    await chrome.storage.local.remove(PARTIAL_KEY);
+    await autoLog('done', { ok, total: results.length, failed, news: news.count, minutes: Math.round((at - started) / 6000) / 10 });
     if (news.count) {
       chrome.notifications.create('otmer-auto', {
         type: 'basic', iconUrl: 'icon.png', priority: 1,
@@ -447,8 +511,10 @@ async function autoRun(force = false) {
     return { status: 'ok', run };
   } catch (e) {
     await saveAuto({ running: null });
+    await autoLog('error', { error: String(e.message || e) });
     return { status: 'error', error: String(e.message || e) };
   } finally {
+    clearInterval(keep);
     autoBusy = false;
   }
 }
@@ -465,10 +531,10 @@ chrome.notifications.onClicked.addListener(async (id) => {
 function ensureAlarm() {
   chrome.alarms.get('otmer-auto', (a) => { if (!a) chrome.alarms.create('otmer-auto', { delayInMinutes: 2, periodInMinutes: 60 }); });
 }
-chrome.runtime.onInstalled.addListener(ensureAlarm);
-chrome.runtime.onStartup.addListener(ensureAlarm);
+chrome.runtime.onInstalled.addListener((d) => { autoLog('installed', { reason: d.reason, version: chrome.runtime.getManifest().version }); ensureAlarm(); });
+chrome.runtime.onStartup.addListener(() => { autoLog('chrome-start'); ensureAlarm(); });
 ensureAlarm();
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'otmer-auto') autoRun(false); });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'otmer-auto') autoRun(false, 'alarm'); });
 
 /** Сообщение сайта: список вещей для автопроверки. В ответ — проверки, которые сайт ещё не забрал. */
 async function autoWatch(m) {
@@ -483,7 +549,9 @@ async function autoWatch(m) {
   const runs = (st.runs || []).filter((r) => r.at > applied);
   await saveAuto({ items: merged, site: typeof m.site === 'string' ? m.site : st.site, api: typeof m.api === 'string' ? m.api : st.api,
     lastManual: Math.max(st.lastManual || 0, +m.lastManual || 0), runs });
-  return { status: 'ok', runs, auto: { enabled: st.enabled, lastRun: st.lastRun || null, running: st.running || null, every: AUTO_EVERY } };
+  // Открыли сайт — повод проверить, если сегодня ещё не проверяли (будильник мог не сработать, пока компьютер спал).
+  setTimeout(() => autoRun(false, 'site'), 5000);
+  return { status: 'ok', runs, auto: { enabled: st.enabled, lastRun: st.lastRun || null, running: autoBusy ? st.running : null, every: AUTO_EVERY } };
 }
 
 // ——— бренды по категориям ———
@@ -600,11 +668,11 @@ chrome.runtime.onMessage.addListener((m, _sender, sendResponse) => {
   }
   if (m && m.type === 'autoStatus') {
     autoState().then((st) => sendResponse({ enabled: st.enabled, count: st.items.length, lastRun: st.lastRun || null, lastManual: st.lastManual || null,
-      running: autoBusy ? st.running : null, last: st.lastSummary || null, site: st.site }));
+      running: autoBusy ? st.running : null, last: st.lastSummary || null, site: st.site, nextAt: autoNextAt(Math.max(st.lastRun || 0, st.lastManual || 0)) }));
     return true;
   }
   if (m && m.type === 'autoNow') {
-    autoRun(true).then(sendResponse);
+    autoRun(true, 'button').then(sendResponse);
     return true;
   }
   if (m && m.type === 'autoToggle') {
