@@ -32,7 +32,7 @@ export function exportRows(items, checked, histories = {}) {
     return [
       cell(p.image ? 'фото' : '', 'left', p.image || ''), cell(p.title), cell(p.brand || ''), cell(p.store),
       cell(rub(p.price), 'right'),
-      cell(has ? rub(Math.round(sig.usual / 10) * 10) : '', 'right'), cell(has ? rub(sig.minRecent) : '', 'right'), cell(has ? pct(sig.pct) : '', 'right'),
+      cell(has ? rub(Math.round(sig.usual)) : '', 'right'), cell(has ? rub(sig.minRecent) : '', 'right'), cell(has ? pct(sig.pct) : '', 'right'),
       cell(v.rating, 'right'), cell(p.reviews ? fmt(p.reviews) : '', 'right'), cell(v.stock), cell((p.sizes || []).join(', ')), cell(p.color || ''),
       cell(m.asked ? m.score + '\u00a0%' : '—', 'right'), cell(m.summary || '—'), cell(checked), cell(v.domain + (p.demo ? ' / поиск' : ''), 'left', v.url),
     ];
@@ -48,7 +48,7 @@ export function listExportRows(rows, colls) {
     return [
       cell(r.item.image ? 'фото' : '', 'left', r.item.image || ''), cell(r.item.title), cell(r.item.brand || ''), cell(r.item.store), cell(name(r.list)),
       cell(rub(r.cur), 'right'), cell(rub(r.was), 'right'), cell(pct(r.dl), 'right'),
-      cell(has ? rub(Math.round(r.sig.usual / 10) * 10) : '', 'right'), cell(has ? rub(r.sig.minRecent) : '', 'right'), cell(r.tg ? rub(r.tg) : '', 'right'),
+      cell(has ? rub(Math.round(r.sig.usual)) : '', 'right'), cell(has ? rub(r.sig.minRecent) : '', 'right'), cell(r.tg ? rub(r.tg) : '', 'right'),
       cell(r.status.label), cell(v.domain, 'left', v.url),
     ];
   });
