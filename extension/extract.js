@@ -563,13 +563,25 @@
     }
 
     if (mode === 'product') {
+      // Наличие — по тому, что видно на странице, как у человека: цена есть и магазин не пишет на странице
+      // «нет в наличии» — вещь не распродана, даже если в служебных данных страницы стоит «недоступно»
+      // (так Stockmann помечает вещи «Сумасшедших дней» до начала акции: «Можно купить с 14 октября»).
+      const SOLD = /нет в наличии|распродан|товар закончился|нет в продаже|снят с продажи|(сообщить|узнать|уведомить)[а-я ]{0,12} о поступлении|sold out/i;
+      const pageText = () => clean((document.querySelector('main') || document.body)?.innerText || '').slice(0, 4000);
+      const seen = (it) => {
+        const hidden = it && it.price && (it.inStock === false || (!(it.sizes || []).length && (it.sizesOut || []).length));
+        if (!hidden || SOLD.test(pageText())) return it;
+        // Размеры с той же скрытой пометкой тоже не считаем распроданными: сказать о них нечего.
+        const sizes = (it.sizes || []).length ? it.sizes : it.sizesOut || [];
+        return { ...it, inStock: null, hiddenUnavailable: true, sizes, sizesOut: (it.sizes || []).length ? it.sizesOut : [] };
+      };
       const ready = await waitFor(() => blockedState() ? { blocked: blockedState() } : (document.querySelector('h1') ? { ok: 1 } : null), opts.timeoutMs || 20000);
       if (ready && ready.blocked) return { blocked: ready.blocked };
       const exact = storeExtract('product');
-      if (exact && exact.price) return { blocked: null, item: (await inlineImages([exact], 1, true))[0], source: 'store' };
+      if (exact && exact.price) return { blocked: null, item: seen((await inlineImages([exact], 1, true))[0]), source: 'store' };
       await sleep(1500); // страница могла не успеть дорисоваться — пробуем ещё раз
       const again = storeExtract('product');
-      if (again && again.price) return { blocked: null, item: (await inlineImages([again], 1, true))[0], source: 'store' };
+      if (again && again.price) return { blocked: null, item: seen((await inlineImages([again], 1, true))[0]), source: 'store' };
       const here = key(location.href);
       const ld = jsonLd();
       const st = stateProducts();
@@ -594,8 +606,8 @@
       };
       // Цены не нашлось. «Нет в наличии» — только если страница сама так говорит (кнопка, плашка);
       // иначе это сбой разбора (капча, недогруженная страница, магазин поменял сайт), а не распродажа.
-      const head = clean((document.querySelector('main') || document.body)?.innerText || '').slice(0, 4000);
-      const soldText = !item.price && /нет в наличии|распродан|товар закончился|нет в продаже|снят с продажи|sold out/i.test(head);
+      const soldText = !item.price && SOLD.test(pageText());
+      if (item.price) Object.assign(item, seen(item));
       const diag = { title: document.title, h1: clean(document.querySelector('h1')?.innerText || '').slice(0, 120), next: !!nextData(), nuxt: !!lamodaState(),
         storeItem: !!(exact || again), textLen: (document.body?.innerText || '').length };
       return { blocked: null, item, soldText, diag };
