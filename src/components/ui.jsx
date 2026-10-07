@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon.jsx';
+import { MONTHS_G, promoDate } from '../lib/product.js';
 
 export function Box({ on }) {
   return <span className={'cbx' + (on ? ' on' : '')} aria-hidden="true">{on && <Icon name="check" size={10} />}</span>;
@@ -69,19 +70,12 @@ export function PromoTag({ promo }) {
 // Участие в «Сумасшедших днях» — только по данным расширения 0.4.4+ (v: 2): в 0.4.3 в акцию ошибочно попадали все товары.
 const inCrazyDaysPromo = (promo) => !!promo && promo.v >= 2 && !!promo.crazy;
 export const inCrazyDays = (p) => inCrazyDaysPromo(p?.promo);
-const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const WD = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 /** «2026-10-17» / «17.10» / «17 октября» → «сб, с 17 октября». */
 function crazyDateLabel(s) {
   if (!s) return '';
-  let d = null;
-  let m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) d = new Date(+m[1], +m[2] - 1, +m[3]);
-  m = !d && String(s).match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?/);
-  if (m) d = new Date(m[3] ? +m[3] : new Date().getFullYear(), +m[2] - 1, +m[1]);
-  m = !d && String(s).match(/(\d{1,2})\s+([а-я]+)/i);
-  if (m && MONTHS_G.indexOf(m[2].toLowerCase()) >= 0) d = new Date(new Date().getFullYear(), MONTHS_G.indexOf(m[2].toLowerCase()), +m[1]);
-  if (!d || Number.isNaN(d.getTime())) return String(s);
+  const d = promoDate(s);
+  if (!d) return String(s);
   return WD[d.getDay()] + ', с ' + d.getDate() + ' ' + MONTHS_G[d.getMonth()];
 }
 
