@@ -144,7 +144,7 @@ export function Home() {
               const n = reached ? r.dl : r.sig?.pct || 0;
               const kind = kindOf(r.item);
               const what = (kind ? cap(kind) + ' ' : '') + (r.item.brand || (kind ? '' : r.item.title)) + ' в ' + r.item.store;
-              const ctx = reached ? 'цель ' + rub(r.tg) + ' достигнута' : 'отличная цена — обычная ' + rub(Math.round(r.sig.usual / 10) * 10);
+              const ctx = reached ? 'цель ' + rub(r.tg) + ' достигнута' : 'отличная цена — обычная ' + rub(Math.round(r.sig.usual));
               return (
                 <div key={r.id} className="blk-row">
                   <b style={{ fontWeight: 600 }}>{what.trim()}</b>: <span className={'chg-inline ' + (n < 0 ? 'drop' : n > 0 ? 'rise' : '')}>{pct(n)}</span>, {ctx}.{' '}

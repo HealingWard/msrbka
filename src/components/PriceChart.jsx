@@ -46,7 +46,7 @@ export function PriceChart({ p, points, loading, target, children }) {
     const days = Math.round((now - st.from) / 86400000) + 1;
     const pl = (days < period ? days : period) + ' дней';
     const minDate = dateLong(st.minAt);
-    const usualR = rub(Math.round(sig.usual / 10) * 10);
+    const usualR = rub(Math.round(sig.usual));
     const P = (n) => Math.abs(n) + ' %';
     const sentence = sig.level === 'excellent' ? 'Отличная цена: на ' + P(sig.pct) + ' ниже обычной (' + usualR + '). Пора покупать.'
       : sig.level === 'good' ? 'Хорошая цена: на ' + P(sig.pct) + ' ниже обычной (' + usualR + '). Отличной будет цена от ' + rub(Math.floor((sig.usual * (1 - SIGNAL.excellent)) / 100) * 100) + ' и ниже.'
