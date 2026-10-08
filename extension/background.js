@@ -279,11 +279,12 @@ async function downloadDiag() {
  * auto — автопроверка: без проверки «не робот» (магазин, который дважды её показал, пропускаем до следующего раза)
  * и без кэша карточек (в нём фото, а хранилище расширения не резиновое).
  */
-async function recheckJob(urls, send, auto = false) {
+async function recheckJob(urls, send, auto = false, interactive = false) {
   if (!auto) manualJobs++;
-  try { return await recheckList(urls, send, auto); } finally { if (!auto) manualJobs--; }
+  try { return await recheckList(urls, send, auto, interactive); } finally { if (!auto) manualJobs--; }
 }
-async function recheckList(urls, send, auto) {
+/** interactive — автопроверка по нажатию на уведомление: проверку «не робот» показываем человеку, как при ручной. */
+async function recheckList(urls, send, auto, interactive = false) {
   const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, auto ? 300 : 100);
   if (!list.length) return send({ pricel: 'result', status: 'empty', items: [] });
   const win = await openWindow();
@@ -294,9 +295,9 @@ async function recheckList(urls, send, auto) {
       const url = list[i];
       const [storeId, s] = storeForUrl(url);
       send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length, ...(auto ? { items: out } : {}) });
-      if (auto && blockedBy[storeId] >= 2) { out.push({ url, status: 'blocked' }); continue; }
+      if (auto && !interactive && blockedBy[storeId] >= 2) { out.push({ url, storeId, status: 'blocked', why: 'магазин попросил подтвердить, что вы не робот' }); continue; }
       let r = null;
-      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host, snapOnFail: true }, () => send({ pricel: 'progress', stage: 'human' }), auto); } catch (e) { r = { error: String(e.message || e) }; }
+      try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host, snapOnFail: true }, () => send({ pricel: 'progress', stage: 'human' }), auto && !interactive); } catch (e) { r = { error: String(e.message || e) }; }
       if (r && r.blocked) blockedBy[storeId] = (blockedBy[storeId] || 0) + 1;
       if (r && r.item && r.item.price) {
         if (!auto) await saveDetails(url, r.item);
@@ -377,7 +378,7 @@ async function autoLog(ev, extra = {}) {
     const last = log[log.length - 1];
     // Повторяющиеся «рано» и «занято» не забивают журнал: обновляем последнюю запись и считаем повторы.
     const entry = { at: new Date().toISOString(), ev, ...extra };
-    const next = last && last.ev === ev && ['not-due', 'busy', 'manual-busy'].includes(ev) ? [...log.slice(0, -1), { ...entry, n: (last.n || 1) + 1 }] : [...log, entry];
+    const next = last && last.ev === ev && ['not-due', 'busy', 'manual-busy', 'away'].includes(ev) ? [...log.slice(0, -1), { ...entry, n: (last.n || 1) + 1 }] : [...log, entry];
     await chrome.storage.local.set({ [LOG_KEY]: next.slice(-60) });
   } catch { /* хранилище */ }
 }
@@ -391,6 +392,16 @@ function autoDue(last, now = Date.now()) {
   const today = new Date(now); today.setHours(0, 0, 0, 0);
   return last < today.getTime() && now - last >= AUTO_GAP;
 }
+const dayKey = (t = Date.now()) => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+const RETRY_GAP = 50 * 60e3; // повтор не удавшихся вещей — не чаще раза в час…
+const RETRY_MAX = 3;          // …и не больше трёх раз за день
+const FAILED = (x) => x.status !== 'ok' && x.status !== 'noprice';
+/** Вещи, которые сегодняшняя проверка не смогла прочитать (капча, сбой сети) и которые пора попробовать снова. */
+function retryDue(st, now = Date.now()) {
+  const r = st.retry;
+  return !!(r && r.urls && r.urls.length && r.day === dayKey(now) && (r.tries || 0) < RETRY_MAX && now - (r.at || 0) >= RETRY_GAP);
+}
+
 /** Когда будет следующая автопроверка (для окна расширения). */
 function autoNextAt(last) {
   if (!last) return Date.now();
@@ -452,7 +463,7 @@ function autoNews(results, byUrl) {
   return { count: goal.length + down.length + back.length, goal: goal.length, down: down.length, back: back.length, lines };
 }
 
-async function autoRun(force = false, why = 'alarm') {
+async function autoRun(force = false, why = 'alarm', interactive = false) {
   if (autoBusy) { await autoLog('busy', { why }); return { status: 'busy' }; }
   const st = await autoState();
   // Прошлая проверка оборвалась (Chrome закрыли, расширение перезапустилось): снимаем отметку «идёт».
@@ -460,7 +471,14 @@ async function autoRun(force = false, why = 'alarm') {
   if (!st.items.length) { await autoLog('empty', { why }); return { status: 'empty' }; }
   if (!force && !st.enabled) { await autoLog('off', { why }); return { status: 'skip' }; }
   if (!force && manualJobs) { await autoLog('manual-busy', { why }); return { status: 'busy' }; }
-  if (!force && !autoDue(lastCheck(st))) { await autoLog('not-due', { why, last: new Date(lastCheck(st)).toISOString() }); return { status: 'skip' }; }
+  const retryOnly = !autoDue(lastCheck(st)) && (retryDue(st) || (force && !!st.retry?.urls?.length && why === 'captcha'));
+  if (!force && !autoDue(lastCheck(st)) && !retryOnly) { await autoLog('not-due', { why, last: new Date(lastCheck(st)).toISOString() }); return { status: 'skip' }; }
+  // Только когда человек за компьютером: ночью ноутбук спит, сеть отключена — страницы магазинов не открываются
+  // (так 8 октября в 4 утра не открылись 76 вещей из 86).
+  if (!force && chrome.idle) {
+    const state = await chrome.idle.queryState(600).catch(() => 'active');
+    if (state !== 'active') { await autoLog('away', { why, state }); return { status: 'skip' }; }
+  }
   autoBusy = true;
   await saveAuto({ running: Date.now() });
   // Расширение Chrome может усыпить фоновую часть посреди долгой проверки: регулярный вызов API её не даёт усыпить.
@@ -472,9 +490,10 @@ async function autoRun(force = false, why = 'alarm') {
     const part = (await chrome.storage.local.get(PARTIAL_KEY))[PARTIAL_KEY];
     const prior = part && Date.now() - part.started < PARTIAL_TTL ? (part.items || []).filter((x) => byUrl[x.url]) : [];
     const doneUrls = new Set(prior.map((x) => x.url));
-    const todo = st.items.map((w) => w.url).filter((u) => !doneUrls.has(u));
+    const want = retryOnly ? new Set(st.retry.urls) : null;
+    const todo = st.items.map((w) => w.url).filter((u) => !doneUrls.has(u) && (!want || want.has(u)));
     const started = prior.length ? part.started : Date.now();
-    await autoLog('start', { why, items: st.items.length, resumed: prior.length });
+    await autoLog(retryOnly ? 'retry' : 'start', { why, items: retryOnly ? todo.length : st.items.length, resumed: prior.length, ...(retryOnly ? { try: (st.retry.tries || 0) + 1 } : {}) });
     let saved = 0;
     const r = await new Promise((resolve) => {
       recheckJob(todo, (m) => {
@@ -484,7 +503,7 @@ async function autoRun(force = false, why = 'alarm') {
           saved = m.items.length;
           chrome.storage.local.set({ [PARTIAL_KEY]: { started, items: [...prior, ...m.items.map((x) => ({ ...x, item: slim(x.item) }))] } }).catch(() => {});
         }
-      }, true).catch((e) => resolve({ status: 'error', items: [], error: String(e.message || e) }));
+      }, true, interactive).catch((e) => resolve({ status: 'error', items: [], error: String(e.message || e) }));
     });
     if (r.status === 'error' && !(r.items || []).length && !prior.length) throw new Error(r.error || 'проверка не удалась');
     const results = [...prior, ...(r.items || []).map((x) => ({ ...x, item: slim(x.item) }))];
@@ -494,11 +513,15 @@ async function autoRun(force = false, why = 'alarm') {
     // Следующее сравнение — с только что увиденными ценами.
     const fresh = await autoState();
     const seen = Object.fromEntries(results.filter((x) => x.status === 'ok' || x.status === 'noprice').map((x) => [x.url, x]));
-    const failed = results.filter((x) => x.status !== 'ok' && x.status !== 'noprice').length;
+    const failedList = results.filter(FAILED);
+    const failed = failedList.length;
     const items = fresh.items.map((w) => (seen[w.url] ? { ...w, price: seen[w.url].item?.price || w.price, soldOut: seen[w.url].status === 'noprice' } : w));
     const ok = results.filter((x) => x.status === 'ok').length;
     const run = { at, results, news: { count: news.count, goal: news.goal, down: news.down, back: news.back, failed }, ok, total: results.length, storeIssues: r.storeIssues || {} };
-    await saveAuto({ items, lastRun: at, running: null, runs: [...(fresh.runs || []), run].slice(-AUTO_RUNS), lastSummary: { at, ...run.news, ok, total: results.length } });
+    // Не прочитанные вещи (капча, сбой сети) пробуем снова через час, до трёх раз за день.
+    const tries = retryOnly && fresh.retry?.day === dayKey(at) ? (fresh.retry.tries || 0) + 1 : 0;
+    const retry = failed ? { urls: failedList.map((x) => x.url), day: dayKey(at), tries, at } : null;
+    await saveAuto({ items, lastRun: at, running: null, retry, runs: [...(fresh.runs || []), run].slice(-AUTO_RUNS), lastSummary: { at, ...run.news, ok, total: results.length } });
     await chrome.storage.local.remove(PARTIAL_KEY);
     await autoLog('done', { ok, total: results.length, failed, news: news.count, minutes: Math.round((at - started) / 6000) / 10 });
     if (news.count) {
@@ -506,6 +529,16 @@ async function autoRun(force = false, why = 'alarm') {
         type: 'basic', iconUrl: 'icon.png', priority: 1,
         title: 'Отмерь: ' + (news.goal ? 'пора покупать' : news.down ? 'подешевело' : 'снова в продаже'),
         message: news.lines.slice(0, 3).join('\n') + (news.lines.length > 3 ? '\nи ещё ' + (news.lines.length - 3) : ''),
+      });
+    }
+    // Магазин просит «не робот»: сами её не проходим — просим человека одним нажатием.
+    const blocked = failedList.filter((x) => x.status === 'blocked');
+    if (blocked.length && !interactive) {
+      const names = [...new Set(blocked.map((x) => (STORES[x.storeId] || {}).name).filter(Boolean))].join(' и ') || 'Магазин';
+      chrome.notifications.create('otmer-captcha', {
+        type: 'basic', iconUrl: 'icon.png', priority: 2, requireInteraction: true,
+        title: 'Отмерь: ' + names + ' просит подтвердить «не робот»',
+        message: 'Не проверено вещей: ' + blocked.length + '. Нажмите — откроется окно магазина, подтвердите, и проверка продолжится сама.',
       });
     }
     return { status: 'ok', run };
@@ -520,6 +553,7 @@ async function autoRun(force = false, why = 'alarm') {
 }
 
 chrome.notifications.onClicked.addListener(async (id) => {
+  if (id === 'otmer-captcha') { chrome.notifications.clear(id); autoRun(true, 'captcha', true); return; }
   if (id !== 'otmer-auto') return;
   const st = await autoState();
   chrome.tabs.create({ url: (st.site || 'https://healingward.github.io/msrbka/') + '#/lists' });
