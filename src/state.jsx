@@ -260,6 +260,15 @@ export function AppProvider({ children }) {
   // забираем проверки, сделанные без нас, и применяем их как обычную проверку цен.
   const [autoInfo, setAutoInfo] = useState(null); // { status, auto: { enabled, lastRun, running } }
   const appliedRef = useRef(prefs.autoApplied || 0);
+  // Вкладка с сайтом может быть открыта сутками: забираем автопроверки, когда к ней возвращаются, и раз в 15 минут.
+  const [syncTick, setSyncTick] = useState(0);
+  useEffect(() => {
+    const bump = () => { if (document.visibilityState === 'visible') setSyncTick((n) => n + 1); };
+    document.addEventListener('visibilitychange', bump);
+    window.addEventListener('focus', bump);
+    const iv = setInterval(bump, 15 * 60e3);
+    return () => { document.removeEventListener('visibilitychange', bump); window.removeEventListener('focus', bump); clearInterval(iv); };
+  }, []);
   useEffect(() => {
     if (!isLive()) return undefined;
     let stop = false;
@@ -280,7 +289,7 @@ export function AppProvider({ children }) {
       }).catch(() => {});
     }, 1500);
     return () => { stop = true; clearTimeout(t); };
-  }, [favs, applyRecheck, setPrefs]);
+  }, [favs, applyRecheck, setPrefs, syncTick]);
 
   const setFavColl = useCallback((id, coll) => setFavs((f) => (f[id] ? { ...f, [id]: { ...f[id], coll } } : f)), [setFavs]);
 
