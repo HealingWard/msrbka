@@ -569,6 +569,8 @@ chrome.runtime.onInstalled.addListener((d) => { autoLog('installed', { reason: d
 chrome.runtime.onStartup.addListener(() => { autoLog('chrome-start'); ensureAlarm(); });
 ensureAlarm();
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'otmer-auto') autoRun(false, 'alarm'); });
+// Человек вернулся к компьютеру (открыл ноутбук, разблокировал экран) — не ждём будильника до часа.
+if (chrome.idle) chrome.idle.onStateChanged.addListener((state) => { if (state === 'active') setTimeout(() => autoRun(false, 'back'), 60000); });
 
 /** Сообщение сайта: список вещей для автопроверки. В ответ — проверки, которые сайт ещё не забрал. */
 async function autoWatch(m) {

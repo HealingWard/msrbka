@@ -306,9 +306,11 @@ export function AppProvider({ children }) {
 
   const value = useMemo(() => ({
     saved, favs, colls, prefs, query, pending, lastRun, results, resultsReady, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo,
+    // Меняется, когда к вкладке возвращаются и раз в 15 минут: «сегодня, 13:46» на странице, открытой вчера, пересчитывается во «вчера».
+    syncTick,
     setQuery, setPending, setLastRun, setPref, setStoreResult, findItem,
     runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl,
-  }), [saved, favs, colls, prefs, query, pending, lastRun, results, resultsReady, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo, setQuery, setPending, setLastRun, setPref,
+  }), [saved, favs, colls, prefs, query, pending, lastRun, results, resultsReady, toast, notify, clearToast, learned, learnBrands, catBrands, learnCatBrands, autoInfo, syncTick, setQuery, setPending, setLastRun, setPref,
     setStoreResult, findItem, runSearch, relaunch, saveSearch, deleteSearch, toggleFav, setTarget, refreshFav, applyRecheck, setFavColl, addColl, removeColl]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
