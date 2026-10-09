@@ -279,13 +279,21 @@ async function downloadDiag() {
  * auto — автопроверка: без проверки «не робот» (магазин, который дважды её показал, пропускаем до следующего раза)
  * и без кэша карточек (в нём фото, а хранилище расширения не резиновое).
  */
-async function recheckJob(urls, send, auto = false, interactive = false) {
+async function recheckJob(urls, send, auto = false, interactive = false, opts = {}) {
   if (!auto) manualJobs++;
-  try { return await recheckList(urls, send, auto, interactive); } finally { if (!auto) manualJobs--; }
+  try { return await recheckList(urls, send, auto, interactive, opts); } finally { if (!auto) manualJobs--; }
 }
+
+// Спокойный темп автопроверки: страницы этих магазинов открываем не чаще раза в столько миллисекунд,
+// как обычный посетитель, а не десятки подряд (так Stockmann и просит «не робот»).
+const AUTO_PACE = { stockmann: 75000 };
 /** interactive — автопроверка по нажатию на уведомление: проверку «не робот» показываем человеку, как при ручной. */
-async function recheckList(urls, send, auto, interactive = false) {
-  const list = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, auto ? 300 : 100);
+async function recheckList(urls, send, auto, interactive = false, opts = {}) {
+  const pace = opts.pace || {};
+  const all = (Array.isArray(urls) ? urls : []).filter((u) => typeof u === 'string' && storeForUrl(u)).slice(0, auto ? 300 : 100);
+  // Сначала быстрые магазины, потом те, что в спокойном темпе.
+  const list = [...all.filter((u) => !pace[storeForUrl(u)[0]]), ...all.filter((u) => pace[storeForUrl(u)[0]])];
+  const lastAt = {};
   if (!list.length) return send({ pricel: 'result', status: 'empty', items: [] });
   const win = await openWindow();
   const out = [];
@@ -296,6 +304,13 @@ async function recheckList(urls, send, auto, interactive = false) {
       const [storeId, s] = storeForUrl(url);
       send({ pricel: 'progress', stage: 'recheck', done: i, total: list.length, ...(auto ? { items: out } : {}) });
       if (auto && !interactive && blockedBy[storeId] >= 2) { out.push({ url, storeId, status: 'blocked', why: 'магазин попросил подтвердить, что вы не робот' }); continue; }
+      if (pace[storeId] && lastAt[storeId]) {
+        const wait = lastAt[storeId] + pace[storeId] - Date.now();
+        if (wait > 0) await sleep(wait);
+      }
+      // Человек отошёл от компьютера — ставим на паузу: продолжим с этого места, когда вернётся.
+      if (opts.stop && await opts.stop()) { send({ pricel: 'result', status: 'paused', items: out }); return; }
+      lastAt[storeId] = Date.now();
       let r = null;
       try { r = await visit(win, url, 'product', { linkPattern: s.linkPattern, host: s.host, snapOnFail: true }, () => send({ pricel: 'progress', stage: 'human' }), auto && !interactive); } catch (e) { r = { error: String(e.message || e) }; }
       if (r && r.blocked) blockedBy[storeId] = (blockedBy[storeId] || 0) + 1;
@@ -471,8 +486,11 @@ async function autoRun(force = false, why = 'alarm', interactive = false) {
   if (!st.items.length) { await autoLog('empty', { why }); return { status: 'empty' }; }
   if (!force && !st.enabled) { await autoLog('off', { why }); return { status: 'skip' }; }
   if (!force && manualJobs) { await autoLog('manual-busy', { why }); return { status: 'busy' }; }
-  const retryOnly = !autoDue(lastCheck(st)) && (retryDue(st) || (force && !!st.retry?.urls?.length && why === 'captcha'));
-  if (!force && !autoDue(lastCheck(st)) && !retryOnly) { await autoLog('not-due', { why, last: new Date(lastCheck(st)).toISOString() }); return { status: 'skip' }; }
+  // Проверку поставили на паузу (человек отошёл) — её продолжаем, даже если сегодня уже проверяли вручную.
+  const part0 = (await chrome.storage.local.get(PARTIAL_KEY))[PARTIAL_KEY];
+  const resume = !!(part0 && Date.now() - part0.started < PARTIAL_TTL);
+  const retryOnly = !resume && !autoDue(lastCheck(st)) && (retryDue(st) || (force && !!st.retry?.urls?.length && why === 'captcha'));
+  if (!force && !resume && !autoDue(lastCheck(st)) && !retryOnly) { await autoLog('not-due', { why, last: new Date(lastCheck(st)).toISOString() }); return { status: 'skip' }; }
   // Только когда человек за компьютером: ночью ноутбук спит, сеть отключена — страницы магазинов не открываются
   // (так 8 октября в 4 утра не открылись 76 вещей из 86).
   if (!force && chrome.idle) {
@@ -503,8 +521,18 @@ async function autoRun(force = false, why = 'alarm', interactive = false) {
           saved = m.items.length;
           chrome.storage.local.set({ [PARTIAL_KEY]: { started, items: [...prior, ...m.items.map((x) => ({ ...x, item: slim(x.item) }))] } }).catch(() => {});
         }
-      }, true, interactive).catch((e) => resolve({ status: 'error', items: [], error: String(e.message || e) }));
+      }, true, interactive, {
+        pace: interactive ? {} : AUTO_PACE,
+        stop: interactive || !chrome.idle ? null : async () => (await chrome.idle.queryState(600).catch(() => 'active')) !== 'active',
+      }).catch((e) => resolve({ status: 'error', items: [], error: String(e.message || e) }));
     });
+    if (r.status === 'paused') {
+      const items = [...prior, ...(r.items || []).map((x) => ({ ...x, item: slim(x.item) }))];
+      await chrome.storage.local.set({ [PARTIAL_KEY]: { started, items } });
+      await saveAuto({ running: null });
+      await autoLog('paused', { done: items.length, of: st.items.length });
+      return { status: 'paused' };
+    }
     if (r.status === 'error' && !(r.items || []).length && !prior.length) throw new Error(r.error || 'проверка не удалась');
     const results = [...prior, ...(r.items || []).map((x) => ({ ...x, item: slim(x.item) }))];
     const at = Date.now();
