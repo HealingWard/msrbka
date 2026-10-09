@@ -141,7 +141,7 @@ export function Lists() {
     if (r.results.some((x) => x.item?.store === 'Stockmann')) parts.push(crazy.length
       ? 'в «Сумасшедших днях» Stockmann — ' + crazy.length + ': ' + crazy.map((p) => (p.brand ? p.brand + ' ' : '') + p.title).join(', ')
       : 'в «Сумасшедших днях» Stockmann — ни одной');
-    setCheck({ busy: false, summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.'
+    setCheck({ busy: false, at: Date.now(), summary: 'Проверено ' + r.results.length + ' ' + plural(r.results.length, THINGS) + ': ' + parts.join(', ') + '.'
       + (issues.length ? ' ' + issues.join(' и ') + ': не удалось проверить больше половины вещей — наличие у них не меняли. Похоже на сбой магазина: откройте окно расширения «Отмерь» → «Сохранить диагностику» и пришлите папку.' : '') });
     setTimeout(() => setReload((x) => x + 1), 1500);
   };
@@ -175,9 +175,9 @@ export function Lists() {
           </button>
         )}
       </div>
-      {check && (
+      {check && !(check.at && new Date(check.at).toDateString() !== new Date().toDateString()) && (
         <div className="note recheck-note" role="status" style={{ marginTop: 24, marginBottom: 0, ...(check.error ? { color: 'var(--rise)' } : {}) }}>
-          {check.busy ? check.text + ' Окно расширения свёрнуто, на вещь уходит 5–10 секунд.' : check.error || check.summary}
+          {check.busy ? check.text + ' Окно расширения свёрнуто, на вещь уходит 5–10 секунд.' : check.error || (check.at ? 'Ручная проверка ' + whenStr(new Date(check.at).toISOString()) + '. ' : '') + check.summary}
         </div>
       )}
 
