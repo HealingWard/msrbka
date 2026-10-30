@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Отмерь — поиск в магазинах",
   "short_name": "Отмерь",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Ищет товары в Stockmann и Lamoda для сайта «Отмерь» и раз в день сам проверяет цены вещей, за которыми вы следите: открывает карточки в вашем браузере и собирает цены, размеры, цвет и бренд.",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -20,7 +20,7 @@
     "https://*.stockmann.ru/*",
     "https://www.lamoda.ru/*",
     "https://lamoda.ru/*",
-    "https://5-42-124-4.sslip.io/*"
+    "https://90-156-154-135.sslip.io/*"
   ],
   "background": {
     "service_worker": "background.js"
